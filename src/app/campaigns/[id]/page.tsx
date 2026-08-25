@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computeHealthStatus, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
-import { HealthBadge } from "@/components/HealthBadge";
+import { computeDecision, REASON_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
+import { DecisionBadge } from "@/components/DecisionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { MiniFunnel } from "@/components/campaigns/MiniFunnel";
 import type { Campaign, InsightSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -34,12 +35,39 @@ export default async function CampaignDetailPage({
     .order("date", { ascending: false })
     .returns<InsightSnapshot[]>();
 
-  const totalSpend = (snapshots ?? []).reduce((s, r) => s + r.spend, 0);
-  const totalResults = (snapshots ?? []).reduce((s, r) => s + r.results, 0);
+  const rows = snapshots ?? [];
+  const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
+  const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0);
+  const totalClicks = rows.reduce((s, r) => s + r.clicks, 0);
+  const totalResults = rows.reduce((s, r) => s + r.results, 0);
   const costPerResult = totalResults > 0 ? totalSpend / totalResults : null;
   const target =
     campaign.objective === "leads" ? campaign.target_cpl ?? DEFAULT_TARGET_CPL : campaign.target_cpa ?? DEFAULT_TARGET_CPA;
-  const health = computeHealthStatus({ spend: totalSpend, costPerResult, target });
+
+  // Trend evidence: split synced days into two halves (rows are date-desc),
+  // compare recent-half vs prior-half cost/result. Needs ≥4 days to be meaningful.
+  let trend: { recentCostPerResult: number | null; priorCostPerResult: number | null } | undefined;
+  if (rows.length >= 4) {
+    const mid = Math.floor(rows.length / 2);
+    const recent = rows.slice(0, mid);
+    const prior = rows.slice(mid);
+    const recentSpend = recent.reduce((s, r) => s + r.spend, 0);
+    const recentResults = recent.reduce((s, r) => s + r.results, 0);
+    const priorSpend = prior.reduce((s, r) => s + r.spend, 0);
+    const priorResults = prior.reduce((s, r) => s + r.results, 0);
+    trend = {
+      recentCostPerResult: recentResults > 0 ? recentSpend / recentResults : null,
+      priorCostPerResult: priorResults > 0 ? priorSpend / priorResults : null,
+    };
+  }
+
+  const { decision, reasons } = computeDecision({
+    spend: totalSpend,
+    costPerResult,
+    target,
+    daysSynced: rows.length,
+    trend,
+  });
 
   return (
     <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
@@ -54,7 +82,7 @@ export default async function CampaignDetailPage({
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge isEnabled={campaign.is_enabled} deliveryStatus={campaign.delivery_status} />
-          <HealthBadge status={health} />
+          <DecisionBadge decision={decision} showAction />
         </div>
       </div>
 
@@ -69,10 +97,40 @@ export default async function CampaignDetailPage({
         />
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader
+            title="Decision evidence"
+            description={`Target cost/result: ${target}`}
+          />
+          <CardBody>
+            {reasons.length === 0 ? (
+              <p className="text-sm text-foreground-muted">No evidence yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {reasons.map((code) => (
+                  <li key={code} className="text-sm flex items-start gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-foreground-muted mt-1.5 shrink-0" />
+                    {REASON_COPY[code]}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="Funnel" description="Impressions → Clicks → Leads (all-time synced)" />
+          <CardBody>
+            <MiniFunnel impressions={totalImpressions} clicks={totalClicks} results={totalResults} />
+          </CardBody>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader title="Daily snapshots" description="From synced insight_snapshots rows" />
         <CardBody>
-          {!snapshots || snapshots.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="text-sm text-foreground-muted">No synced data for this campaign yet.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -88,7 +146,7 @@ export default async function CampaignDetailPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {snapshots.map((s) => (
+                  {rows.map((s) => (
                     <tr key={s.date} className="border-b border-border last:border-0">
                       <td className="py-2 pr-4">{s.date}</td>
                       <td className="py-2 pr-4">{s.spend.toFixed(2)}</td>

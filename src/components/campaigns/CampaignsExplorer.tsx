@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Download, X, ChevronLeft, ChevronRight, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { HealthBadge } from "@/components/HealthBadge";
+import { DecisionBadge } from "@/components/DecisionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { DECISION_COPY } from "@/lib/health";
-import type { HealthStatus } from "@/lib/types";
+import { REASON_COPY, type ReasonCode } from "@/lib/health";
+import type { Decision } from "@/lib/types";
 
 export interface CampaignRow {
   id: string;
@@ -21,16 +21,17 @@ export interface CampaignRow {
   budgetType: string | null;
   spend: number;
   costPerResult: number | null;
-  health: HealthStatus;
+  decision: Decision;
+  reasons: ReasonCode[];
 }
 
-const HEALTH_FILTERS: HealthStatus[] = ["profitable", "watch", "underperforming", "insufficient_data"];
+const DECISION_FILTERS: Decision[] = ["scale", "continue", "optimize", "watch", "close"];
 const PAGE_SIZE = 25;
 
 export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [healthFilter, setHealthFilter] = useState<HealthStatus | null>(null);
+  const [decisionFilter, setDecisionFilter] = useState<Decision | null>(null);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -43,14 +44,14 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
         const status = (r.deliveryStatus ?? (r.isEnabled ? "active" : "paused")).toLowerCase();
         if (status !== statusFilter) return false;
       }
-      if (healthFilter && r.health !== healthFilter) return false;
+      if (decisionFilter && r.decision !== decisionFilter) return false;
       return true;
     });
-  }, [rows, query, statusFilter, healthFilter]);
+  }, [rows, query, statusFilter, decisionFilter]);
 
   // Reset to page 1 whenever the filters change, without an effect (React's
   // "adjust state during render" pattern for derived-from-props resets).
-  const filterKey = `${query}|${statusFilter}|${healthFilter}`;
+  const filterKey = `${query}|${statusFilter}|${decisionFilter}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -61,7 +62,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
   const currentPage = Math.min(page, pageCount);
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const hasActiveFilters = Boolean(statusFilter || healthFilter);
+  const hasActiveFilters = Boolean(statusFilter || decisionFilter);
 
   return (
     <div className="space-y-4">
@@ -84,10 +85,10 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
             onChange={setStatusFilter}
           />
           <FilterButton
-            label="Health"
-            value={healthFilter}
-            options={HEALTH_FILTERS}
-            onChange={(v) => setHealthFilter(v as HealthStatus | null)}
+            label="Decision"
+            value={decisionFilter}
+            options={DECISION_FILTERS}
+            onChange={(v) => setDecisionFilter(v as Decision | null)}
           />
         </div>
 
@@ -107,13 +108,13 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
           {statusFilter && (
             <Chip label={`Status: ${statusFilter}`} onRemove={() => setStatusFilter(null)} />
           )}
-          {healthFilter && (
-            <Chip label={`Health: ${healthFilter.replace("_", " ")}`} onRemove={() => setHealthFilter(null)} />
+          {decisionFilter && (
+            <Chip label={`Decision: ${decisionFilter}`} onRemove={() => setDecisionFilter(null)} />
           )}
           <button
             onClick={() => {
               setStatusFilter(null);
-              setHealthFilter(null);
+              setDecisionFilter(null);
             }}
             className="text-xs text-foreground-muted hover:text-foreground underline"
           >
@@ -140,8 +141,8 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                   <th className="py-2.5 px-4 font-medium">Budget</th>
                   <th className="py-2.5 px-4 font-medium">Spend</th>
                   <th className="py-2.5 px-4 font-medium">Cost/Result</th>
-                  <th className="py-2.5 px-4 font-medium">Health</th>
                   <th className="py-2.5 px-4 font-medium">Decision</th>
+                  <th className="py-2.5 px-4 font-medium">Why</th>
                 </tr>
               </thead>
               <tbody>
@@ -164,9 +165,11 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                     </td>
                     <td className="py-2.5 px-4">{r.costPerResult != null ? r.costPerResult.toFixed(2) : "—"}</td>
                     <td className="py-2.5 px-4">
-                      <HealthBadge status={r.health} />
+                      <DecisionBadge decision={r.decision} />
                     </td>
-                    <td className="py-2.5 px-4 font-medium">{DECISION_COPY[r.health]}</td>
+                    <td className="py-2.5 px-4 text-xs text-foreground-muted">
+                      {r.reasons.map((code) => REASON_COPY[code]).join("; ")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -181,7 +184,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                   <Link href={`/campaigns/${r.id}`} className="font-medium text-sm hover:underline">
                     {r.name}
                   </Link>
-                  <HealthBadge status={r.health} />
+                  <DecisionBadge decision={r.decision} />
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
@@ -197,8 +200,8 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                     <div className="font-medium">{r.costPerResult != null ? r.costPerResult.toFixed(2) : "—"}</div>
                   </div>
                 </div>
-                <div className="mt-3 pt-3 border-t border-border text-xs font-medium">
-                  {DECISION_COPY[r.health]}
+                <div className="mt-3 pt-3 border-t border-border text-xs text-foreground-muted">
+                  {r.reasons.map((code) => REASON_COPY[code]).join("; ")}
                 </div>
               </div>
             ))}
@@ -274,7 +277,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
 }
 
 function exportCsv(rows: CampaignRow[]) {
-  const header = ["Campaign", "Status", "Objective", "Spend", "Cost/Result", "Health", "Decision"];
+  const header = ["Campaign", "Status", "Objective", "Spend", "Cost/Result", "Decision", "Reasons"];
   const lines = rows.map((r) =>
     [
       r.name,
@@ -282,8 +285,8 @@ function exportCsv(rows: CampaignRow[]) {
       r.objective,
       r.spend.toFixed(2),
       r.costPerResult?.toFixed(2) ?? "",
-      r.health,
-      DECISION_COPY[r.health],
+      r.decision,
+      r.reasons.map((code) => REASON_COPY[code]).join("; "),
     ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(","),

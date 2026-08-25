@@ -1,17 +1,33 @@
 import Link from "next/link";
 import { Wallet, Eye, MousePointerClick, Target, Megaphone } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computeHealthStatus, DECISION_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
-import type { Campaign, HealthStatus, InsightSnapshot } from "@/lib/types";
+import { computeDecision, REASON_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
+import type { Campaign, Decision, InsightSnapshot } from "@/lib/types";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Card, CardHeader, CardBody, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { HealthBadge } from "@/components/HealthBadge";
+import { DecisionBadge } from "@/components/DecisionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SpendChart } from "@/components/dashboard/SpendChart";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 
 export const dynamic = "force-dynamic";
+
+const DECISION_ORDER: Decision[] = ["scale", "continue", "optimize", "watch", "close"];
+const DECISION_LABELS: Record<Decision, string> = {
+  scale: "Scale",
+  continue: "Continue",
+  optimize: "Optimize",
+  watch: "Watch",
+  close: "Close",
+};
+const DECISION_TONES: Record<Decision, "success" | "warning" | "danger" | "neutral"> = {
+  scale: "success",
+  continue: "success",
+  optimize: "warning",
+  watch: "neutral",
+  close: "danger",
+};
 
 export default async function OverviewPage() {
   const supabase = createServerSupabaseClient();
@@ -42,7 +58,7 @@ export default async function OverviewPage() {
         .returns<Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results">[]>(),
     ]);
 
-  const totalsByCampaign = new Map<string, { spend: number; results: number }>();
+  const totalsByCampaign = new Map<string, { spend: number; results: number; dates: Set<string> }>();
   const totalsByDate = new Map<string, { spend: number; impressions: number; clicks: number; results: number }>();
 
   let totalSpend = 0;
@@ -51,9 +67,10 @@ export default async function OverviewPage() {
   let totalResults = 0;
 
   for (const s of snapshots ?? []) {
-    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0 };
+    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0, dates: new Set<string>() };
     cur.spend += s.spend;
     cur.results += s.results;
+    cur.dates.add(s.date);
     totalsByCampaign.set(s.campaign_id, cur);
 
     const day = totalsByDate.get(s.date) ?? { spend: 0, impressions: 0, clicks: 0, results: 0 };
@@ -69,10 +86,11 @@ export default async function OverviewPage() {
     totalResults += s.results;
   }
 
-  const healthCounts = { profitable: 0, watch: 0, underperforming: 0, insufficient_data: 0 };
+  const decisionCounts: Record<Decision, number> = { scale: 0, continue: 0, optimize: 0, watch: 0, close: 0 };
   const evaluated: {
     campaign: Campaign;
-    health: HealthStatus;
+    decision: Decision;
+    reasons: ReturnType<typeof computeDecision>["reasons"];
     costPerResult: number | null;
     target: number;
     spend: number;
@@ -83,15 +101,20 @@ export default async function OverviewPage() {
     const costPerResult = totals && totals.results > 0 ? totals.spend / totals.results : null;
     const target =
       c.objective === "leads" ? c.target_cpl ?? DEFAULT_TARGET_CPL : c.target_cpa ?? DEFAULT_TARGET_CPA;
-    const health = computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target });
-    healthCounts[health]++;
-    evaluated.push({ campaign: c, health, costPerResult, target, spend: totals?.spend ?? 0 });
+    const { decision, reasons } = computeDecision({
+      spend: totals?.spend ?? 0,
+      costPerResult,
+      target,
+      daysSynced: totals?.dates.size ?? 0,
+    });
+    decisionCounts[decision]++;
+    evaluated.push({ campaign: c, decision, reasons, costPerResult, target, spend: totals?.spend ?? 0 });
   }
 
   // Owner's core question: which campaigns need a decision right now? Worst
   // cost-per-result overrun first, so the most urgent calls surface at the top.
   const needsAttention = evaluated
-    .filter((e) => e.health === "underperforming" || e.health === "watch")
+    .filter((e) => e.decision === "close" || e.decision === "optimize")
     .sort((a, b) => {
       const overrunA = a.costPerResult != null ? a.costPerResult / a.target : 0;
       const overrunB = b.costPerResult != null ? b.costPerResult / b.target : 0;
@@ -127,7 +150,7 @@ export default async function OverviewPage() {
         </div>
       </div>
 
-      {/* KPI grid */}
+      {/* KPI grid — Revenue/Profit/ROAS/Sales omitted, no revenue source exists (PRD §12 Q10) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total spend (synced)" value={formatCurrency(totalSpend)} icon={Wallet} emphasis note="all-time synced" />
         <KpiCard label="Impressions" value={formatCompact(totalImpressions)} icon={Eye} note="all-time synced" />
@@ -137,6 +160,18 @@ export default async function OverviewPage() {
         <KpiCard label="Avg. cost / result" value={avgCostPerResult != null ? formatCurrency(avgCostPerResult) : "—"} />
         <KpiCard label="Active campaigns" value={String(activeCount ?? 0)} icon={Megaphone} note={`of ${totalCount ?? 0} total`} />
         <KpiCard label="Avg. CPC" value={cpc != null ? formatCurrency(cpc) : "—"} />
+      </div>
+
+      {/* Decision summary strip — docs/CAMPAIGN_INTELLIGENCE_SPEC.md §3 */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {DECISION_ORDER.map((d) => (
+          <DecisionSummaryCard
+            key={d}
+            label={DECISION_LABELS[d]}
+            tone={DECISION_TONES[d]}
+            count={decisionCounts[d]}
+          />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -156,14 +191,13 @@ export default async function OverviewPage() {
           </CardFooter>
         </Card>
 
-        {/* Health summary */}
+        {/* Decision summary (list form) */}
         <Card>
-          <CardHeader title="Health summary" description="CPL/CPA vs target, all campaigns" />
+          <CardHeader title="Decision summary" description="CPL/CPA vs target, all campaigns" />
           <CardBody className="space-y-3">
-            <HealthRow label="On-target" tone="success" count={healthCounts.profitable} />
-            <HealthRow label="Watch" tone="warning" count={healthCounts.watch} />
-            <HealthRow label="Underperforming" tone="danger" count={healthCounts.underperforming} />
-            <HealthRow label="Insufficient data" tone="neutral" count={healthCounts.insufficient_data} />
+            {DECISION_ORDER.map((d) => (
+              <DecisionRow key={d} label={DECISION_LABELS[d]} tone={DECISION_TONES[d]} count={decisionCounts[d]} />
+            ))}
           </CardBody>
         </Card>
       </div>
@@ -172,7 +206,7 @@ export default async function OverviewPage() {
       <Card>
         <CardHeader
           title="Needs a decision"
-          description="Underperforming or borderline campaigns, worst cost overrun first"
+          description="Optimize or Close campaigns, worst cost overrun first"
           action={
             <Link href="/campaigns" className="text-xs font-medium text-foreground hover:underline">
               View all campaigns →
@@ -182,7 +216,7 @@ export default async function OverviewPage() {
         {needsAttention.length === 0 ? (
           <CardBody>
             <p className="text-sm text-foreground-muted">
-              Nothing needs attention right now — no campaign is in Watch or Underperforming.
+              Nothing needs attention right now — no campaign is in Optimize or Close.
             </p>
           </CardBody>
         ) : (
@@ -193,12 +227,12 @@ export default async function OverviewPage() {
                   <th className="py-2 px-5 font-medium">Campaign</th>
                   <th className="py-2 px-5 font-medium">Status</th>
                   <th className="py-2 px-5 font-medium">Cost/Result vs target</th>
-                  <th className="py-2 px-5 font-medium">Health</th>
                   <th className="py-2 px-5 font-medium">Decision</th>
+                  <th className="py-2 px-5 font-medium">Why</th>
                 </tr>
               </thead>
               <tbody>
-                {needsAttention.map(({ campaign: c, health, costPerResult, target }) => (
+                {needsAttention.map(({ campaign: c, decision, reasons, costPerResult, target }) => (
                   <tr key={c.id} className="border-b border-border last:border-0 hover:bg-surface-muted/50">
                     <td className="py-2.5 px-5">
                       <Link href={`/campaigns/${c.id}`} className="font-medium truncate max-w-xs hover:underline block">
@@ -212,9 +246,11 @@ export default async function OverviewPage() {
                       {costPerResult != null ? `${costPerResult.toFixed(2)} / ${target}` : "—"}
                     </td>
                     <td className="py-2.5 px-5">
-                      <HealthBadge status={health} />
+                      <DecisionBadge decision={decision} />
                     </td>
-                    <td className="py-2.5 px-5 font-medium">{DECISION_COPY[health]}</td>
+                    <td className="py-2.5 px-5 text-xs text-foreground-muted">
+                      {reasons.map((code) => REASON_COPY[code]).join("; ")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -226,7 +262,31 @@ export default async function OverviewPage() {
   );
 }
 
-function HealthRow({
+function DecisionSummaryCard({
+  label,
+  tone,
+  count,
+}: {
+  label: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+  count: number;
+}) {
+  const dotClass = {
+    success: "bg-success-fg",
+    warning: "bg-warning-fg",
+    danger: "bg-danger-fg",
+    neutral: "bg-foreground-muted",
+  }[tone];
+  return (
+    <div className="border border-border rounded-[var(--radius-lg)] bg-surface p-4">
+      <span className={`h-2 w-2 rounded-full inline-block ${dotClass}`} />
+      <div className="text-2xl font-semibold tracking-tight mt-1.5">{count}</div>
+      <div className="text-xs text-foreground-muted">{label}</div>
+    </div>
+  );
+}
+
+function DecisionRow({
   label,
   tone,
   count,

@@ -99,7 +99,9 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
         clicks: Number(row.clicks || 0),
         results,
         cost_per_result: costPerResult,
-        breakdown_dimension: null,
+        // "" not null — Postgres treats NULL <> NULL, which broke the unique
+        // constraint's ON CONFLICT matching (migration 0004).
+        breakdown_dimension: "",
       },
       { onConflict: "campaign_id,date,level,breakdown_dimension" },
     );

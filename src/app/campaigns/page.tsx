@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computeHealthStatus, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
+import { computeDecision, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
 import type { Campaign, InsightSnapshot } from "@/lib/types";
 import { CampaignsExplorer, type CampaignRow } from "@/components/campaigns/CampaignsExplorer";
 
@@ -19,8 +19,8 @@ export default async function CampaignsPage() {
       .returns<Campaign[]>(),
     supabase
       .from("insight_snapshots")
-      .select("campaign_id, spend, results")
-      .returns<Pick<InsightSnapshot, "campaign_id" | "spend" | "results">[]>(),
+      .select("campaign_id, date, spend, results")
+      .returns<Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "results">[]>(),
   ]);
 
   if (error) {
@@ -32,11 +32,12 @@ export default async function CampaignsPage() {
     );
   }
 
-  const totalsByCampaign = new Map<string, { spend: number; results: number }>();
+  const totalsByCampaign = new Map<string, { spend: number; results: number; dates: Set<string> }>();
   for (const s of snapshots ?? []) {
-    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0 };
+    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0, dates: new Set<string>() };
     cur.spend += s.spend;
     cur.results += s.results;
+    cur.dates.add(s.date);
     totalsByCampaign.set(s.campaign_id, cur);
   }
 
@@ -44,7 +45,12 @@ export default async function CampaignsPage() {
     const totals = totalsByCampaign.get(c.id);
     const costPerResult = totals && totals.results > 0 ? totals.spend / totals.results : null;
     const target = c.objective === "leads" ? c.target_cpl ?? DEFAULT_TARGET_CPL : c.target_cpa ?? DEFAULT_TARGET_CPA;
-    const health = computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target });
+    const { decision, reasons } = computeDecision({
+      spend: totals?.spend ?? 0,
+      costPerResult,
+      target,
+      daysSynced: totals?.dates.size ?? 0,
+    });
 
     return {
       id: c.id,
@@ -57,7 +63,8 @@ export default async function CampaignsPage() {
       budgetType: c.budget_type,
       spend: totals?.spend ?? 0,
       costPerResult,
-      health,
+      decision,
+      reasons,
     };
   });
 

@@ -1,4 +1,6 @@
-export type HealthStatus = "profitable" | "watch" | "underperforming" | "insufficient_data";
+// 5-state Decision taxonomy — PRD §13.4 / docs/CAMPAIGN_INTELLIGENCE_SPEC.md §8.
+// Replaces the old 4-state HealthStatus (profitable/watch/underperforming/insufficient_data).
+export type Decision = "scale" | "continue" | "optimize" | "watch" | "close";
 
 export interface Campaign {
   id: string;
@@ -19,15 +21,6 @@ export interface Campaign {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
-}
-
-export interface Client {
-  id: string;
-  workspace_id: string;
-  name: string;
-  locality: string | null;
-  unit_types: string[] | null;
-  builder_name: string | null;
 }
 
 export interface InsightSnapshot {
