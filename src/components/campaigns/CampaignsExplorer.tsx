@@ -13,7 +13,6 @@ import type { HealthStatus } from "@/lib/types";
 export interface CampaignRow {
   id: string;
   name: string;
-  clientName: string;
   objective: string;
   isEnabled: boolean;
   deliveryStatus: string | null;
@@ -38,8 +37,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (q) {
-        const haystack = `${r.name} ${r.clientName}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
+        if (!r.name.toLowerCase().includes(q)) return false;
       }
       if (statusFilter) {
         const status = (r.deliveryStatus ?? (r.isEnabled ? "active" : "paused")).toLowerCase();
@@ -73,7 +71,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search campaigns, clients…"
+            placeholder="Search campaigns…"
             className="w-full h-9 pl-9 pr-3 rounded-[var(--radius-sm)] border border-border bg-surface text-sm placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
@@ -138,7 +136,6 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
               <thead className="sticky top-0 bg-surface">
                 <tr className="text-left text-xs text-foreground-muted border-b border-border">
                   <th className="py-2.5 px-4 font-medium">Campaign</th>
-                  <th className="py-2.5 px-4 font-medium">Client</th>
                   <th className="py-2.5 px-4 font-medium">Status</th>
                   <th className="py-2.5 px-4 font-medium">Budget</th>
                   <th className="py-2.5 px-4 font-medium">Spend</th>
@@ -156,7 +153,6 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                       </Link>
                       <div className="text-xs text-foreground-muted">{r.objective}</div>
                     </td>
-                    <td className="py-2.5 px-4 text-foreground-muted">{r.clientName}</td>
                     <td className="py-2.5 px-4">
                       <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
                     </td>
@@ -187,7 +183,6 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                   </Link>
                   <HealthBadge status={r.health} />
                 </div>
-                <div className="text-xs text-foreground-muted mt-0.5">{r.clientName}</div>
                 <div className="flex items-center gap-2 mt-2">
                   <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
                   <span className="text-xs text-foreground-muted">{r.objective}</span>
@@ -279,11 +274,10 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
 }
 
 function exportCsv(rows: CampaignRow[]) {
-  const header = ["Campaign", "Client", "Status", "Objective", "Spend", "Cost/Result", "Health", "Decision"];
+  const header = ["Campaign", "Status", "Objective", "Spend", "Cost/Result", "Health", "Decision"];
   const lines = rows.map((r) =>
     [
       r.name,
-      r.clientName,
       r.deliveryStatus ?? (r.isEnabled ? "active" : "paused"),
       r.objective,
       r.spend.toFixed(2),

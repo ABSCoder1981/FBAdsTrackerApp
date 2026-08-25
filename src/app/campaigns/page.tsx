@@ -1,6 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeHealthStatus, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
-import type { Campaign, Client, InsightSnapshot } from "@/lib/types";
+import type { Campaign, InsightSnapshot } from "@/lib/types";
 import { CampaignsExplorer, type CampaignRow } from "@/components/campaigns/CampaignsExplorer";
 
 export const dynamic = "force-dynamic";
@@ -8,16 +8,15 @@ export const dynamic = "force-dynamic";
 export default async function CampaignsPage() {
   const supabase = createServerSupabaseClient();
 
-  const [{ data: campaigns, error }, { data: clients }, { data: snapshots }] = await Promise.all([
+  const [{ data: campaigns, error }, { data: snapshots }] = await Promise.all([
     supabase
       .from("campaigns")
       .select(
-        "id, name, client_id, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, target_cpl, target_cpa",
+        "id, name, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, target_cpl, target_cpa",
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .returns<Campaign[]>(),
-    supabase.from("clients").select("id, name").returns<Pick<Client, "id" | "name">[]>(),
     supabase
       .from("insight_snapshots")
       .select("campaign_id, spend, results")
@@ -32,8 +31,6 @@ export default async function CampaignsPage() {
       </main>
     );
   }
-
-  const clientNameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
 
   const totalsByCampaign = new Map<string, { spend: number; results: number }>();
   for (const s of snapshots ?? []) {
@@ -52,7 +49,6 @@ export default async function CampaignsPage() {
     return {
       id: c.id,
       name: c.name,
-      clientName: (c.client_id && clientNameById.get(c.client_id)) || "—",
       objective: c.objective,
       isEnabled: c.is_enabled,
       deliveryStatus: c.delivery_status,
@@ -69,7 +65,7 @@ export default async function CampaignsPage() {
     <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
-        <p className="text-sm text-foreground-muted mt-1">{rows.length} campaigns across all clients</p>
+        <p className="text-sm text-foreground-muted mt-1">{rows.length} campaigns</p>
       </div>
       <CampaignsExplorer rows={rows} />
     </main>

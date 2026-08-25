@@ -7,7 +7,7 @@ import { HealthBadge } from "@/components/HealthBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
-import type { Campaign, Client, InsightSnapshot } from "@/lib/types";
+import type { Campaign, InsightSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +27,12 @@ export default async function CampaignDetailPage({
 
   if (!campaign) notFound();
 
-  const [{ data: client }, { data: snapshots }] = await Promise.all([
-    campaign.client_id
-      ? supabase.from("clients").select("id, name").eq("id", campaign.client_id).maybeSingle<Client>()
-      : Promise.resolve({ data: null }),
-    supabase
-      .from("insight_snapshots")
-      .select("date, spend, impressions, clicks, results, cost_per_result")
-      .eq("campaign_id", id)
-      .order("date", { ascending: false })
-      .returns<InsightSnapshot[]>(),
-  ]);
+  const { data: snapshots } = await supabase
+    .from("insight_snapshots")
+    .select("date, spend, impressions, clicks, results, cost_per_result")
+    .eq("campaign_id", id)
+    .order("date", { ascending: false })
+    .returns<InsightSnapshot[]>();
 
   const totalSpend = (snapshots ?? []).reduce((s, r) => s + r.spend, 0);
   const totalResults = (snapshots ?? []).reduce((s, r) => s + r.results, 0);
@@ -55,7 +50,7 @@ export default async function CampaignDetailPage({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
-          <p className="text-sm text-foreground-muted mt-1">{client?.name ?? "No client"} · {campaign.objective}</p>
+          <p className="text-sm text-foreground-muted mt-1">{campaign.objective}</p>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge isEnabled={campaign.is_enabled} deliveryStatus={campaign.delivery_status} />

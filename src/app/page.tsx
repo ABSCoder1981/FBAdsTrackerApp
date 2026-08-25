@@ -30,7 +30,7 @@ export default async function OverviewPage() {
       supabase
         .from("campaigns")
         .select(
-          "id, name, client_id, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at",
+          "id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at",
         )
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
