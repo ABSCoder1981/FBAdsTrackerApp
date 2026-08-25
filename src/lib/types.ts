@@ -23,6 +23,13 @@ export interface Campaign {
   deleted_at: string | null;
 }
 
+export interface Ad {
+  id: string;
+  external_id: string;
+  campaign_id: string;
+  name: string;
+}
+
 export interface InsightSnapshot {
   id: string;
   campaign_id: string;

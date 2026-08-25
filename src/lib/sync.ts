@@ -23,6 +23,8 @@ interface FbInsightRow {
   date_start: string;
   publisher_platform?: string;
   platform_position?: string;
+  ad_id?: string;
+  ad_name?: string;
 }
 
 function extractResults(objective: string | null, actions: FbAction[] | undefined): number {
@@ -41,15 +43,18 @@ function extractResults(objective: string | null, actions: FbAction[] | undefine
 async function fetchInsights(
   adAccountId: string,
   token: string,
-  breakdowns?: string,
+  options: { level?: string; extraFields?: string; breakdowns?: string } = {},
 ): Promise<FbInsightRow[]> {
   const url = new URL(`https://graph.facebook.com/${FB_API_VERSION}/${adAccountId}/insights`);
-  url.searchParams.set("level", "campaign");
-  url.searchParams.set("fields", "campaign_id,spend,impressions,clicks,actions");
+  url.searchParams.set("level", options.level ?? "campaign");
+  url.searchParams.set(
+    "fields",
+    `campaign_id,spend,impressions,clicks,actions${options.extraFields ? `,${options.extraFields}` : ""}`,
+  );
   url.searchParams.set("time_increment", "1");
   url.searchParams.set("date_preset", "yesterday");
   url.searchParams.set("access_token", token);
-  if (breakdowns) url.searchParams.set("breakdowns", breakdowns);
+  if (options.breakdowns) url.searchParams.set("breakdowns", options.breakdowns);
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -69,21 +74,29 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
 
   const supabase = createServerSupabaseClient();
 
-  // Two pulls: aggregate campaign-level (level='campaign', no breakdown) and
-  // placement breakdown (level='placement', breakdown_dimension=
-  // "publisher_platform/platform_position") — docs/CAMPAIGN_INTELLIGENCE_SPEC.md
-  // §6D, confirmed to have real differentiation for this account (unlike
-  // Geography, §6E — tested and reverted, see spec §0).
-  const [campaignRows, placementRows] = await Promise.all([
+  // Three pulls:
+  // - campaign-level (level='campaign', no breakdown)
+  // - placement breakdown (level='placement', breakdown_dimension=
+  //   "publisher_platform/platform_position") — spec §6D, confirmed real
+  //   differentiation (unlike Geography §6E — tested and reverted, spec §0)
+  // - ad-level (level='ad', breakdown_dimension=ad's Meta id) — spec §6B,
+  //   reduced form (no creative format/thumbnail). Tested live 2026-08-25:
+  //   only 4/20 campaigns have >1 ad, thin but real value for those; harmless
+  //   single-row table for the rest. Audience (§6C) was tested too and
+  //   dropped — every campaign has exactly 1 ad set, nothing to compare.
+  const [campaignRows, placementRows, adRows] = await Promise.all([
     fetchInsights(adAccountId, token),
-    fetchInsights(adAccountId, token, "publisher_platform,platform_position"),
+    fetchInsights(adAccountId, token, { breakdowns: "publisher_platform,platform_position" }),
+    fetchInsights(adAccountId, token, { level: "ad", extraFields: "ad_id,ad_name" }),
   ]);
 
   if (campaignRows.length === 0) {
     return { fetched: 0, upserted: 0, skipped: 0 };
   }
 
-  const externalIds = [...new Set([...campaignRows, ...placementRows].map((r) => r.campaign_id))];
+  const externalIds = [
+    ...new Set([...campaignRows, ...placementRows, ...adRows].map((r) => r.campaign_id)),
+  ];
   const { data: campaigns, error: campaignsErr } = await supabase
     .from("campaigns")
     .select("id, external_id, objective")
@@ -92,6 +105,19 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
   if (campaignsErr) throw campaignsErr;
 
   const byExternalId = new Map(campaigns?.map((c) => [c.external_id, c]));
+
+  // Upsert ad metadata (name) before inserting snapshots that reference it.
+  for (const row of adRows) {
+    const campaign = byExternalId.get(row.campaign_id);
+    if (!campaign || !row.ad_id) continue;
+    const { error: adUpsertErr } = await supabase
+      .from("ads")
+      .upsert(
+        { external_id: row.ad_id, campaign_id: campaign.id, name: row.ad_name ?? row.ad_id },
+        { onConflict: "external_id" },
+      );
+    if (adUpsertErr) throw adUpsertErr;
+  }
 
   let upserted = 0;
   let skipped = 0;
@@ -135,6 +161,14 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
     const dimension = `${row.publisher_platform ?? "unknown"}/${row.platform_position ?? "unknown"}`;
     await upsertRow(row, "placement", dimension);
   }
+  for (const row of adRows) {
+    if (!row.ad_id) continue;
+    await upsertRow(row, "ad", row.ad_id);
+  }
 
-  return { fetched: campaignRows.length + placementRows.length, upserted, skipped };
+  return {
+    fetched: campaignRows.length + placementRows.length + adRows.length,
+    upserted,
+    skipped,
+  };
 }

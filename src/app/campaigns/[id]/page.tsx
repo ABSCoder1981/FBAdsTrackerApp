@@ -9,7 +9,8 @@ import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { MiniFunnel } from "@/components/campaigns/MiniFunnel";
 import { PlacementTable } from "@/components/campaigns/PlacementTable";
-import type { Campaign, InsightSnapshot } from "@/lib/types";
+import { CreativeTable } from "@/components/campaigns/CreativeTable";
+import type { Ad, Campaign, InsightSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,21 +30,29 @@ export default async function CampaignDetailPage({
 
   if (!campaign) notFound();
 
-  const [{ data: snapshots }, { data: placementSnapshots }] = await Promise.all([
-    supabase
-      .from("insight_snapshots")
-      .select("date, spend, impressions, clicks, results, cost_per_result")
-      .eq("campaign_id", id)
-      .eq("level", "campaign")
-      .order("date", { ascending: false })
-      .returns<InsightSnapshot[]>(),
-    supabase
-      .from("insight_snapshots")
-      .select("breakdown_dimension, spend, impressions, clicks, results")
-      .eq("campaign_id", id)
-      .eq("level", "placement")
-      .returns<Pick<InsightSnapshot, "breakdown_dimension" | "spend" | "impressions" | "clicks" | "results">[]>(),
-  ]);
+  const [{ data: snapshots }, { data: placementSnapshots }, { data: adSnapshots }, { data: ads }] =
+    await Promise.all([
+      supabase
+        .from("insight_snapshots")
+        .select("date, spend, impressions, clicks, results, cost_per_result")
+        .eq("campaign_id", id)
+        .eq("level", "campaign")
+        .order("date", { ascending: false })
+        .returns<InsightSnapshot[]>(),
+      supabase
+        .from("insight_snapshots")
+        .select("breakdown_dimension, spend, impressions, clicks, results")
+        .eq("campaign_id", id)
+        .eq("level", "placement")
+        .returns<Pick<InsightSnapshot, "breakdown_dimension" | "spend" | "impressions" | "clicks" | "results">[]>(),
+      supabase
+        .from("insight_snapshots")
+        .select("breakdown_dimension, spend, impressions, clicks, results")
+        .eq("campaign_id", id)
+        .eq("level", "ad")
+        .returns<Pick<InsightSnapshot, "breakdown_dimension" | "spend" | "impressions" | "clicks" | "results">[]>(),
+      supabase.from("ads").select("external_id, name").eq("campaign_id", id).returns<Pick<Ad, "external_id" | "name">[]>(),
+    ]);
 
   const rows = snapshots ?? [];
 
@@ -59,6 +68,23 @@ export default async function CampaignDetailPage({
   }
   const placementRows = [...placementTotals.entries()].map(([dimension, totals]) => ({
     dimension,
+    ...totals,
+  }));
+
+  const adNameById = new Map((ads ?? []).map((a) => [a.external_id, a.name]));
+  const adTotals = new Map<string, { spend: number; impressions: number; clicks: number; results: number }>();
+  for (const a of adSnapshots ?? []) {
+    const adId = a.breakdown_dimension ?? "unknown";
+    const cur = adTotals.get(adId) ?? { spend: 0, impressions: 0, clicks: 0, results: 0 };
+    cur.spend += a.spend;
+    cur.impressions += a.impressions;
+    cur.clicks += a.clicks;
+    cur.results += a.results;
+    adTotals.set(adId, cur);
+  }
+  const creativeRows = [...adTotals.entries()].map(([adId, totals]) => ({
+    adId,
+    name: adNameById.get(adId) ?? adId,
     ...totals,
   }));
   const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
@@ -152,12 +178,21 @@ export default async function CampaignDetailPage({
         </Card>
       </div>
 
-      <Card>
-        <CardHeader title="Placement" description="Spend and results by Facebook/Instagram placement (all-time synced)" />
-        <CardBody>
-          <PlacementTable rows={placementRows} />
-        </CardBody>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader title="Placement" description="Spend and results by Facebook/Instagram placement (all-time synced)" />
+          <CardBody>
+            <PlacementTable rows={placementRows} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="Creative" description="Spend and results by ad (all-time synced)" />
+          <CardBody>
+            <CreativeTable rows={creativeRows} />
+          </CardBody>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader title="Daily snapshots" description="From synced insight_snapshots rows" />

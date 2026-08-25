@@ -15,7 +15,8 @@ Every module below is tagged with a status. Read this table before estimating an
 | Campaign metadata (name, objective, status, budget) | ✅ Yes | Live `campaigns` table |
 | Daily spend, impressions, clicks, results, cost/result | ✅ Yes | `insight_snapshots`, synced from Meta Insights API (campaign level only) |
 | CPL vs. target, basic health/decision label | ✅ Yes | Current 4-state health system (`src/lib/health.ts`) |
-| Ad set / ad-level breakdowns (Creative, Audience) | ❌ No | Needs new Meta Insights sync at `level=ad`/`level=adset` with breakdown params — not built |
+| Ad-level breakdown (Creative) | ✅ Shipped 2026-08-25, reduced form | `level=ad` sync + minimal `ads` table (name only, no creative format/thumbnail); thin data for this account (4/20 campaigns have >1 ad) but real, see §6B |
+| Ad-set-level breakdown (Audience) | ⚠️ Tested, not useful | Every campaign has exactly 1 ad set — nothing to compare, see §6C |
 | Placement breakdown | ✅ Shipped 2026-08-25 | Campaign-level `breakdowns=publisher_platform,platform_position` — no ad-set sync needed, see §6D |
 | Geography breakdown | ⚠️ Tested, not useful | `breakdowns=country/region` works, but every campaign returns `IN`/`Maharashtra` — no differentiation to build a view around (§6E) |
 | Landing page views, funnel stages beyond "results" | ❌ No | Meta only gives us `actions` (leads/clicks); no landing-page or CRM funnel data |
@@ -186,11 +187,13 @@ All six modules below are **blocked** on data sources that don't exist (§0). Do
 Target: Impressions → Reach → Clicks → Landing Page Views → Leads → Qualified Leads → Opportunities → Sales → Revenue, each stage with volume/conversion %/drop-off %/cost/previous-period comparison, plus automatic bottleneck detection ("Major bottleneck: Lead → Qualified Lead, current 11%, target 25%, gap -14pp").
 **Blocked by:** Landing Page Views isn't in Meta Insights at campaign level without pixel/CAPI setup (not configured). Qualified Lead/Opportunity/Sale don't exist without a CRM. **What's real today:** Impressions → Clicks → Leads is fully available now as a 3-stage mini-funnel — worth building as a standalone chart on Campaign Detail before the full 9-stage version, once Phase 2 prioritizes it.
 
-### 6B. Creative Analysis — blocked
-Needs `level=ad` Meta Insights sync with creative metadata (format, thumbnail, headline) — a real, scoped Phase 2 task (Meta API supports this today, just not built). Classification (Winner/Potential Winner/Stable/Fatigued/Poor Performer) is a rule-based thresholding exercise once the data exists — genuinely buildable in Phase 2, not blocked on ML.
+### 6B. Creative Analysis — shipped 2026-08-25, reduced form
+Shipped: `level=ad` Meta Insights sync + a minimal `ads` table (external_id, campaign_id, name — real synced Meta data, not fabricated). Campaign Detail gets a Creative table: spend/impressions/clicks/CTR/results/cost-per-result per ad, Best/Worst tags gated the same way as Placement (§6D). **Tested live before building:** only 4 of 20 campaigns in this account have more than one ad (max 2) — most campaigns render a single informative row, not a comparison. Real but thin value; worth having since it costs nothing for the 80% with one ad and helps the 20% with more.
 
-### 6C. Audience Analysis — blocked
-Needs `level=adset` sync + targeting metadata + `breakdowns=age,gender` etc. Same category as 6B — real Phase 2 work, not research-blocked.
+**Not shipped, still blocked:** creative format/thumbnail/headline (needs `/act_.../ads` or `/adcreatives` calls, not wired up), and the Winner/Potential Winner/Stable/Fatigued/Poor Performer classification from the original brief — that needs creative *age* and *frequency* trends over time, which this account doesn't have enough history for yet regardless of the API work.
+
+### 6C. Audience Analysis — tested 2026-08-25, not worth building
+Tested `level=adset` live before writing any schema: **every single campaign in this account has exactly 1 ad set** (0 of 20 have more). Audience analysis is fundamentally a comparison *across* ad sets/targeting within a campaign — with always exactly one, there's nothing to compare, same failure mode as Geography (§6E). **Decision: not building this**, not a data-access blocker. Revisit only if the agency starts running multiple ad sets per campaign (e.g. to A/B test audiences) — the sync-side change would be a straightforward extension of the Creative/Placement pattern already in `src/lib/sync.ts` if that changes.
 
 ### 6D. Placement Analysis — shipped 2026-08-25, reduced form
 Unlike 6B/6C, this needed no ad-set/ad-level sync — `breakdowns=publisher_platform,platform_position` works at campaign level, tested live against the real account and confirmed to have real differentiation (7 distinct placements per campaign: Facebook Feed/Reels/Stories/Marketplace/Search/Notifications, Instagram Feed — meaningfully different spend and CTR). Shipped on Campaign Detail as a Placement table: spend, impressions, clicks, CTR, results, cost/result per placement, sorted by spend, with Best/Worst tags gated by a scaled-down spend threshold (10% of `MIN_SPEND_FOR_JUDGEMENT`) so a placement with negligible spend and a lucky-looking CPL doesn't get flagged Best (same insufficient-data protection as the campaign-level Decision, spec Principle 6).
@@ -313,7 +316,9 @@ The third row is deliberately included to demonstrate Principle 6: a naive syste
 | Campaign List (`/campaigns`) | 1 | Exists, needs extension per §4 |
 | Campaign Detail (`/campaigns/[id]`) | 1 | Exists, needs extension per §5 |
 | Placement (Campaign Detail card) | 2 | Shipped 2026-08-25, reduced form (§6D) |
-| Funnel (mini) / Creative / Audience tabs | 1/2/3 | Mini funnel shipped (§6A); Creative/Audience not built — blocked on Meta ad-set/ad sync |
+| Creative (Campaign Detail card) | 2 | Shipped 2026-08-25, reduced form (§6B) |
+| Funnel (mini) | 1 | Shipped (§6A) |
+| Audience tab | — | Not building — tested, every campaign has exactly 1 ad set (§6C) |
 | Geography tab | — | Not building — tested, no differentiation in the real data (§6E) |
 | Financials tab | 3+ | Not built — blocked on CRM/revenue, business decision needed first |
 | Prediction tab | 4 | Not built — blocked on history + forecast model choice |
