@@ -29,3 +29,16 @@ export interface Client {
   unit_types: string[] | null;
   builder_name: string | null;
 }
+
+export interface InsightSnapshot {
+  id: string;
+  campaign_id: string;
+  date: string;
+  level: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  results: number;
+  cost_per_result: number | null;
+  breakdown_dimension: string | null;
+}
