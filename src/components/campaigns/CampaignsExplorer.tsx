@@ -1,20 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Download, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Download, X, ChevronLeft, ChevronRight, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { HealthBadge } from "@/components/HealthBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { DECISION_COPY } from "@/lib/health";
 import type { HealthStatus } from "@/lib/types";
-import { Megaphone } from "lucide-react";
 
 export interface CampaignRow {
   id: string;
   name: string;
   clientName: string;
-  agentName: string | null;
   objective: string;
   isEnabled: boolean;
   deliveryStatus: string | null;
@@ -39,7 +38,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (q) {
-        const haystack = `${r.name} ${r.clientName} ${r.agentName ?? ""}`.toLowerCase();
+        const haystack = `${r.name} ${r.clientName}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       if (statusFilter) {
@@ -51,9 +50,14 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
     });
   }, [rows, query, statusFilter, healthFilter]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [query, statusFilter, healthFilter]);
+  // Reset to page 1 whenever the filters change, without an effect (React's
+  // "adjust state during render" pattern for derived-from-props resets).
+  const filterKey = `${query}|${statusFilter}|${healthFilter}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    if (page !== 1) setPage(1);
+  }
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -69,7 +73,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search campaigns, clients, agents…"
+            placeholder="Search campaigns, clients…"
             className="w-full h-9 pl-9 pr-3 rounded-[var(--radius-sm)] border border-border bg-surface text-sm placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
@@ -135,12 +139,12 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                 <tr className="text-left text-xs text-foreground-muted border-b border-border">
                   <th className="py-2.5 px-4 font-medium">Campaign</th>
                   <th className="py-2.5 px-4 font-medium">Client</th>
-                  <th className="py-2.5 px-4 font-medium">Agent</th>
                   <th className="py-2.5 px-4 font-medium">Status</th>
                   <th className="py-2.5 px-4 font-medium">Budget</th>
                   <th className="py-2.5 px-4 font-medium">Spend</th>
                   <th className="py-2.5 px-4 font-medium">Cost/Result</th>
                   <th className="py-2.5 px-4 font-medium">Health</th>
+                  <th className="py-2.5 px-4 font-medium">Decision</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +157,6 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                       <div className="text-xs text-foreground-muted">{r.objective}</div>
                     </td>
                     <td className="py-2.5 px-4 text-foreground-muted">{r.clientName}</td>
-                    <td className="py-2.5 px-4 text-foreground-muted">{r.agentName ?? "—"}</td>
                     <td className="py-2.5 px-4">
                       <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
                     </td>
@@ -167,6 +170,7 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                     <td className="py-2.5 px-4">
                       <HealthBadge status={r.health} />
                     </td>
+                    <td className="py-2.5 px-4 font-medium">{DECISION_COPY[r.health]}</td>
                   </tr>
                 ))}
               </tbody>
@@ -197,6 +201,9 @@ export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
                     <div className="text-foreground-muted">Cost/Result</div>
                     <div className="font-medium">{r.costPerResult != null ? r.costPerResult.toFixed(2) : "—"}</div>
                   </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-border text-xs font-medium">
+                  {DECISION_COPY[r.health]}
                 </div>
               </div>
             ))}
@@ -272,17 +279,17 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
 }
 
 function exportCsv(rows: CampaignRow[]) {
-  const header = ["Campaign", "Client", "Agent", "Status", "Objective", "Spend", "Cost/Result", "Health"];
+  const header = ["Campaign", "Client", "Status", "Objective", "Spend", "Cost/Result", "Health", "Decision"];
   const lines = rows.map((r) =>
     [
       r.name,
       r.clientName,
-      r.agentName ?? "",
       r.deliveryStatus ?? (r.isEnabled ? "active" : "paused"),
       r.objective,
       r.spend.toFixed(2),
       r.costPerResult?.toFixed(2) ?? "",
       r.health,
+      DECISION_COPY[r.health],
     ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(","),

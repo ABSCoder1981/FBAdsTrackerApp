@@ -30,7 +30,7 @@
 Internal team tool, multiple users, role-based access. **Note (per §4.1):** the live schema is agency-shaped — one `workspace` runs campaigns across many `client`s (observed: real-estate builders/properties) — so "internal team" means the agency's own team, and access scoping should be plannable per-client, not just per-ad-account.
 
 - **Admin** — connects/manages ad accounts, manages users, sets org-wide thresholds, full access.
-- **Marketer/Media Buyer** — views all campaigns, sets campaign-level profitability targets, manages alerts, exports reports. Often maps to the `agent_name` tag on a campaign today, informally — see §12 Q7 on formalizing this into a real relation.
+- **Marketer/Media Buyer** — views all campaigns, sets campaign-level profitability targets, manages alerts, exports reports. **Not** reliably identifiable from the `agent_name` tag on a campaign today — see §4.1 and §12 Q7 (reopened 2026-08-25).
 - **Viewer/Stakeholder (e.g. management)** — read-only access to dashboards and reports, no config access. For an agency, this role also plausibly extends to the *client themselves* (e.g. the builder wanting to see their own campaign's performance) — confirm scope in §12 Q5.
 
 ---
@@ -57,7 +57,7 @@ Key findings that change the PRD:
 - **Status is split across two fields**, not the single enum §6.2 assumed: `is_enabled` (boolean) and `delivery_status` (free-ish text — `active`/`paused` observed; Meta's fuller set — in review, disapproved, completed — should be expected but wasn't seen in this sample).
 - **No ad-account identifier in this table.** There is no `fb_account_id`/`ad_account_id` column — account-level grouping (§6.1) must come from a separate table not covered by this export. **Open question added to §12.**
 - **`external_id` is the Meta campaign ID**, `created_at`/`updated_at`/`deleted_at` give us sync bookkeeping and soft-delete for free — no separate `SyncRun`-style timestamp needed at the row level.
-- **`agent_name` is a loose, sometimes-null tag** (e.g. "Kajal," "Danish," "Test Agent") — appears to identify a salesperson/media buyer associated with the campaign. It is *not* a reliable join key (no `agent_id`) and is frequently blank.
+- **`agent_name` is a loose, sometimes-null tag** (e.g. "Kajal," "Danish," "Test Agent") — appears to identify a salesperson/media buyer associated with the campaign. It is *not* a reliable join key (no `agent_id`) and is frequently blank. **Update 2026-08-25:** broader sampling shows it's worse than "loose" — it frequently holds a property/project name instead of a person (`"SKYORA"`, `"VTP Earth One"`, `"Mantri Kishore Park"`, `"3BHK Prashant Sadan"`), with the real agent name (when present at all) elsewhere in the campaign `name` string with no fixed position. There's no reliable way to derive true agent identity from data collected today. See §12 Q7 (reopened).
 
 **⚠️ Campaign `name` has no fixed format — do not parse it.** Names range from richly descriptive (`"3BHK Lotus Yojangandha - Kajal Leads Campaign May-26"`) to placeholder (`"Campaign 0"`, `"Campaign 4"`) to a raw Meta post caption (`"Post: \"Build Your Lakeside Dream Home and Own Your Own...\""`). Unit type (BHK), locality, agent, and month appear in inconsistent order, inconsistent presence, and free-text spelling. **Any feature that needs property/client/agent identity must resolve it through `client_id` (and a proper `agent_id` once one exists) — never by regex/NLP against `name`.** `name` is display-only. This affects:
 - §7.2 Campaign List filtering/grouping by client or property — must filter on `client_id`, with `name` shown as-is
@@ -181,6 +181,7 @@ Status is computed nightly and shown as a badge everywhere the campaign appears.
 - **Overall account ROAS** and blended cost-per-result
 - **Health summary strip**: count of 🟢 Profitable / 🟡 Watch / 🔴 Underperforming / ⚪ Insufficient data
 - **Top 5 performers** and **Bottom 5 performers** (by ROAS or by chosen KPI)
+- **Implemented 2026-08-25 as "Needs a decision"**: a table of Watch/Underperforming campaigns sorted by worst cost-per-result overrun vs target, each row showing an explicit **Decision** ("Continue" / "Monitor closely" / "Pause & review" / "Needs more data") derived from health status — this is the direct answer to the core ask in §5, surfaced on the dashboard rather than left implicit in a status color
 - **Budget pacing warnings** (campaigns projected to overspend or underspend lifetime budget)
 - **Recent alerts feed**
 
@@ -267,7 +268,7 @@ Report (type, recipients, schedule, last_sent_at)
 **v1 scope decisions (resolved 2026-08-25, see §12):**
 - Revenue/ROAS is **out of scope for v1** — health status uses CPL/CPA vs target only (§5, §6.6 revenue fields deferred)
 - No `ad_accounts` table in Phase 1 — account-level grouping (§6.1) deferred
-- `Client` table and `agent_id → users` relation **are** built in Phase 0, ahead of Phase 1 features
+- `Client` table **is** built in Phase 0, ahead of Phase 1 features. `agent_id → users` was also built in Phase 0 but **reverted 2026-08-25** (migration 0003) once `agent_name` turned out to be unreliable enough that formalizing it fabricated agent identities — see §12 Q7 (reopened)
 - Viewer role is internal-agency only for v1 — no client-facing portal
 
 ---
@@ -303,5 +304,5 @@ Report (type, recipients, schedule, last_sent_at)
 4. Any compliance/data-residency requirement for storing ad account data? *(none specified — assuming none for v1)*
 5. ~~Who are the initial Viewer-role stakeholders?~~ **Resolved 2026-08-25:** Viewer role is internal-agency only for v1; no client-facing portal.
 6. ~~Where does account-level data live?~~ **Resolved 2026-08-25:** deferred — no `ad_accounts` table in Phase 1; revisit if/when account-level grouping becomes a real need.
-7. ~~Should `agent_name` be formalized into `agent_id → User`?~~ **Resolved 2026-08-25:** yes, formalized in Phase 0 alongside the `Client` table (see §8).
+7. **Reopened 2026-08-25.** Should `agent_name` be formalized into `agent_id → User`? Initially resolved "yes" and built in Phase 0, then reverted the same day: real data shows `agent_name` frequently holds a property/project name, not a salesperson (see §4.1 update) — formalizing it built a directory of fake agents. No reliable source for agent identity exists in the data collected today. Answering this needs either (a) a real intake process that captures agent assignment structurally going forward, or (b) accepting agent-level reporting is out of scope until one exists. The app currently shows no agent/salesperson attribution anywhere.
 8. ~~Is there a canonical `Client`/property table?~~ **Resolved 2026-08-25:** building one in Phase 0 (`id, workspace_id, name, locality, unit_types[], builder_name`), backfilled from distinct `client_id`/name pairs in the existing `campaigns` table.

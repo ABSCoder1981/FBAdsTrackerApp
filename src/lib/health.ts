@@ -25,3 +25,12 @@ export function computeHealthStatus(params: {
   }
   return "underperforming";
 }
+
+// The core ask (PRD §5): tell the owner whether to keep spending or step in,
+// not just show a status color.
+export const DECISION_COPY: Record<HealthStatus, string> = {
+  profitable: "Continue",
+  watch: "Monitor closely",
+  underperforming: "Pause & review",
+  insufficient_data: "Needs more data",
+};

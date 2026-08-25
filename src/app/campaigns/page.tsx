@@ -12,7 +12,7 @@ export default async function CampaignsPage() {
     supabase
       .from("campaigns")
       .select(
-        "id, name, client_id, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, agent_name, target_cpl, target_cpa",
+        "id, name, client_id, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, target_cpl, target_cpa",
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
@@ -53,7 +53,6 @@ export default async function CampaignsPage() {
       id: c.id,
       name: c.name,
       clientName: (c.client_id && clientNameById.get(c.client_id)) || "—",
-      agentName: c.agent_name,
       objective: c.objective,
       isEnabled: c.is_enabled,
       deliveryStatus: c.delivery_status,

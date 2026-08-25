@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Wallet, Eye, MousePointerClick, Target, Megaphone } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computeHealthStatus, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
-import type { Campaign, InsightSnapshot } from "@/lib/types";
+import { computeHealthStatus, DECISION_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
+import type { Campaign, HealthStatus, InsightSnapshot } from "@/lib/types";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Card, CardHeader, CardBody, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -70,15 +70,34 @@ export default async function OverviewPage() {
   }
 
   const healthCounts = { profitable: 0, watch: 0, underperforming: 0, insufficient_data: 0 };
+  const evaluated: {
+    campaign: Campaign;
+    health: HealthStatus;
+    costPerResult: number | null;
+    target: number;
+    spend: number;
+  }[] = [];
+
   for (const c of campaigns ?? []) {
     const totals = totalsByCampaign.get(c.id);
     const costPerResult = totals && totals.results > 0 ? totals.spend / totals.results : null;
     const target =
       c.objective === "leads" ? c.target_cpl ?? DEFAULT_TARGET_CPL : c.target_cpa ?? DEFAULT_TARGET_CPA;
-    healthCounts[
-      computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target })
-    ]++;
+    const health = computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target });
+    healthCounts[health]++;
+    evaluated.push({ campaign: c, health, costPerResult, target, spend: totals?.spend ?? 0 });
   }
+
+  // Owner's core question: which campaigns need a decision right now? Worst
+  // cost-per-result overrun first, so the most urgent calls surface at the top.
+  const needsAttention = evaluated
+    .filter((e) => e.health === "underperforming" || e.health === "watch")
+    .sort((a, b) => {
+      const overrunA = a.costPerResult != null ? a.costPerResult / a.target : 0;
+      const overrunB = b.costPerResult != null ? b.costPerResult / b.target : 0;
+      return overrunB - overrunA;
+    })
+    .slice(0, 8);
 
   const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
   const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
@@ -87,8 +106,6 @@ export default async function OverviewPage() {
   const chartData = [...totalsByDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({ date, ...v }));
-
-  const recentCampaigns = (campaigns ?? []).slice(0, 5);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -151,47 +168,59 @@ export default async function OverviewPage() {
         </Card>
       </div>
 
-      {/* Recent campaigns */}
+      {/* Needs attention */}
       <Card>
         <CardHeader
-          title="Recently updated campaigns"
+          title="Needs a decision"
+          description="Underperforming or borderline campaigns, worst cost overrun first"
           action={
             <Link href="/campaigns" className="text-xs font-medium text-foreground hover:underline">
-              View all →
+              View all campaigns →
             </Link>
           }
         />
-        <div className="overflow-x-auto mt-3">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-foreground-muted border-t border-b border-border">
-                <th className="py-2 px-5 font-medium">Campaign</th>
-                <th className="py-2 px-5 font-medium">Status</th>
-                <th className="py-2 px-5 font-medium">Health</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentCampaigns.map((c) => {
-                const totals = totalsByCampaign.get(c.id);
-                const costPerResult = totals && totals.results > 0 ? totals.spend / totals.results : null;
-                const target =
-                  c.objective === "leads" ? c.target_cpl ?? DEFAULT_TARGET_CPL : c.target_cpa ?? DEFAULT_TARGET_CPA;
-                const health = computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target });
-                return (
+        {needsAttention.length === 0 ? (
+          <CardBody>
+            <p className="text-sm text-foreground-muted">
+              Nothing needs attention right now — no campaign is in Watch or Underperforming.
+            </p>
+          </CardBody>
+        ) : (
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-foreground-muted border-t border-b border-border">
+                  <th className="py-2 px-5 font-medium">Campaign</th>
+                  <th className="py-2 px-5 font-medium">Status</th>
+                  <th className="py-2 px-5 font-medium">Cost/Result vs target</th>
+                  <th className="py-2 px-5 font-medium">Health</th>
+                  <th className="py-2 px-5 font-medium">Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {needsAttention.map(({ campaign: c, health, costPerResult, target }) => (
                   <tr key={c.id} className="border-b border-border last:border-0 hover:bg-surface-muted/50">
-                    <td className="py-2.5 px-5 font-medium truncate max-w-xs">{c.name}</td>
+                    <td className="py-2.5 px-5">
+                      <Link href={`/campaigns/${c.id}`} className="font-medium truncate max-w-xs hover:underline block">
+                        {c.name}
+                      </Link>
+                    </td>
                     <td className="py-2.5 px-5">
                       <StatusBadge isEnabled={c.is_enabled} deliveryStatus={c.delivery_status} />
+                    </td>
+                    <td className="py-2.5 px-5 text-foreground-muted">
+                      {costPerResult != null ? `${costPerResult.toFixed(2)} / ${target}` : "—"}
                     </td>
                     <td className="py-2.5 px-5">
                       <HealthBadge status={health} />
                     </td>
+                    <td className="py-2.5 px-5 font-medium">{DECISION_COPY[health]}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );
