@@ -16,7 +16,7 @@ Every module below is tagged with a status. Read this table before estimating an
 | Daily spend, impressions, clicks, results, cost/result | ✅ Yes | `insight_snapshots`, synced from Meta Insights API (campaign level only) |
 | CPL vs. target, basic health/decision label | ✅ Yes | Current 4-state health system (`src/lib/health.ts`) |
 | Ad set / ad-level breakdowns (Creative, Audience, Placement) | ❌ No | Needs new Meta Insights sync at `level=ad`/`level=adset` with breakdown params — not built |
-| Geography breakdown | ❌ No | Needs Meta Insights `breakdowns=country/region` — not built |
+| Geography breakdown | ⚠️ Tested, not useful | `breakdowns=country/region` works, but every campaign returns `IN`/`Maharashtra` — no differentiation to build a view around (§6E) |
 | Landing page views, funnel stages beyond "results" | ❌ No | Meta only gives us `actions` (leads/clicks); no landing-page or CRM funnel data |
 | Qualified Leads, Opportunities, Sales, Revenue | ❌ No | **No CRM or sales pipeline is connected.** This is the single biggest gap — most of §6F (Financials) and the funnel's bottom half depend on it |
 | Meta-attributed vs. CRM-confirmed vs. Finance-confirmed revenue | ❌ No | Same — no revenue source exists at all yet (PRD §12 Q2: deferred) |
@@ -194,8 +194,8 @@ Needs `level=adset` sync + targeting metadata + `breakdowns=age,gender` etc. Sam
 ### 6D. Placement Analysis — blocked
 Needs `breakdowns=publisher_platform,platform_position`. Same category as 6B/6C.
 
-### 6E. Geography Analysis — blocked
-Needs `breakdowns=country` (and region/city, more limited availability from Meta at low spend volumes). Same category.
+### 6E. Geography Analysis — tested 2026-08-25, not worth building
+Not blocked by data access — `breakdowns=country` and `breakdowns=region` both work today, no new tables needed (reuses `insight_snapshots.level`/`breakdown_dimension`). Tested live against the real ad account: **every campaign returns `country=IN`, `region=Maharashtra`** — Meta's finest available geography breakdown for this market is state-level, and there's only one state. A "best/worst geography" view has nothing to differentiate on some real accounts. **Decision: not building this** — not a data-access blocker like the other 6B–6D modules, a data-shape one. Revisit only if the agency ever runs campaigns spanning multiple states; the sync-side implementation (tested, then reverted) is straightforward to re-add if that changes.
 
 ### 6F. Financial Analysis — blocked, hardest module
 Needs a revenue source, full stop. The brief's three-way reconciliation (Meta-attributed vs. CRM-confirmed vs. Finance-confirmed) needs two systems that don't exist yet: a CRM/sales pipeline and a finance/accounting feed. This is not a Phase 2 task — it's a business decision (does the agency want to connect a CRM at all?) before it's an engineering task. Flagged as a standing open question — see `PRD.md` §12 Q10.
@@ -309,7 +309,8 @@ The third row is deliberately included to demonstrate Principle 6: a naive syste
 | Executive Dashboard (`/`) | 1 | Exists, needs reshaping per §3 |
 | Campaign List (`/campaigns`) | 1 | Exists, needs extension per §4 |
 | Campaign Detail (`/campaigns/[id]`) | 1 | Exists, needs extension per §5 |
-| Funnel / Creative / Audience / Placement / Geography tabs | 2/3 | Not built — blocked on Meta ad-set/ad sync |
+| Funnel / Creative / Audience / Placement tabs | 2/3 | Not built — blocked on Meta ad-set/ad sync |
+| Geography tab | — | Not building — tested, no differentiation in the real data (§6E) |
 | Financials tab | 3+ | Not built — blocked on CRM/revenue, business decision needed first |
 | Prediction tab | 4 | Not built — blocked on history + forecast model choice |
 | Decision Center / Decision History | 3 | Not built — blocked on `decisions` table + real auth |
