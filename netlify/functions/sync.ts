@@ -4,7 +4,7 @@ import { runSync } from "../../src/lib/sync";
 // Netlify Scheduled Function: pulls yesterday's campaign insights from the
 // Meta Marketing API and upserts them into insight_snapshots.
 
-export default async () => {
+async function handler() {
   try {
     const result = await runSync();
     console.log("Sync complete", result);
@@ -13,7 +13,9 @@ export default async () => {
     console.error("Sync failed", err);
     return new Response(String(err), { status: 500 });
   }
-};
+}
+
+export default handler;
 
 export const config: Config = {
   schedule: "0 2 * * *", // daily at 02:00 UTC

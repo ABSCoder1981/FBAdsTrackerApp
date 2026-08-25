@@ -1,0 +1,69 @@
+"use client";
+
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LineChart } from "lucide-react";
+
+interface Point {
+  date: string;
+  spend: number;
+  results: number;
+}
+
+export function SpendChart({ data }: { data: Point[] }) {
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={LineChart}
+        title="No synced data yet"
+        description="Run a sync to populate spend and results trends."
+      />
+    );
+  }
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+          <defs>
+            <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#18181b" stopOpacity={0.15} />
+              <stop offset="95%" stopColor="#18181b" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e8" vertical={false} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 11, fill: "#71717a" }}
+            axisLine={{ stroke: "#e5e5e8" }}
+            tickLine={false}
+          />
+          <YAxis tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false} width={48} />
+          <Tooltip
+            contentStyle={{
+              borderRadius: 10,
+              border: "1px solid #e5e5e8",
+              fontSize: 12,
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="spend"
+            stroke="#18181b"
+            strokeWidth={2}
+            fill="url(#spendFill)"
+            name="Spend"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}

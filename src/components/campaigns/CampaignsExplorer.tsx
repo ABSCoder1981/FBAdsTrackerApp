@@ -1,0 +1,300 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Search, Download, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { HealthBadge } from "@/components/HealthBadge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import type { HealthStatus } from "@/lib/types";
+import { Megaphone } from "lucide-react";
+
+export interface CampaignRow {
+  id: string;
+  name: string;
+  clientName: string;
+  agentName: string | null;
+  objective: string;
+  isEnabled: boolean;
+  deliveryStatus: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  budgetType: string | null;
+  spend: number;
+  costPerResult: number | null;
+  health: HealthStatus;
+}
+
+const HEALTH_FILTERS: HealthStatus[] = ["profitable", "watch", "underperforming", "insufficient_data"];
+const PAGE_SIZE = 25;
+
+export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [healthFilter, setHealthFilter] = useState<HealthStatus | null>(null);
+  const [page, setPage] = useState(1);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (q) {
+        const haystack = `${r.name} ${r.clientName} ${r.agentName ?? ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (statusFilter) {
+        const status = (r.deliveryStatus ?? (r.isEnabled ? "active" : "paused")).toLowerCase();
+        if (status !== statusFilter) return false;
+      }
+      if (healthFilter && r.health !== healthFilter) return false;
+      return true;
+    });
+  }, [rows, query, statusFilter, healthFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, healthFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const hasActiveFilters = Boolean(statusFilter || healthFilter);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search campaigns, clients, agents…"
+            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius-sm)] border border-border bg-surface text-sm placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterButton
+            label="Status"
+            value={statusFilter}
+            options={["active", "paused", "in review", "disapproved"]}
+            onChange={setStatusFilter}
+          />
+          <FilterButton
+            label="Health"
+            value={healthFilter}
+            options={HEALTH_FILTERS}
+            onChange={(v) => setHealthFilter(v as HealthStatus | null)}
+          />
+        </div>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          className="sm:ml-auto"
+          onClick={() => exportCsv(filtered)}
+        >
+          <Download size={14} />
+          Export
+        </Button>
+      </div>
+
+      {hasActiveFilters && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {statusFilter && (
+            <Chip label={`Status: ${statusFilter}`} onRemove={() => setStatusFilter(null)} />
+          )}
+          {healthFilter && (
+            <Chip label={`Health: ${healthFilter.replace("_", " ")}`} onRemove={() => setHealthFilter(null)} />
+          )}
+          <button
+            onClick={() => {
+              setStatusFilter(null);
+              setHealthFilter(null);
+            }}
+            className="text-xs text-foreground-muted hover:text-foreground underline"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      <p className="text-xs text-foreground-muted">
+        {filtered.length} of {rows.length} campaigns
+      </p>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={Megaphone} title="No campaigns match" description="Try adjusting your search or filters." />
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto border border-border rounded-[var(--radius-lg)] bg-surface">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-surface">
+                <tr className="text-left text-xs text-foreground-muted border-b border-border">
+                  <th className="py-2.5 px-4 font-medium">Campaign</th>
+                  <th className="py-2.5 px-4 font-medium">Client</th>
+                  <th className="py-2.5 px-4 font-medium">Agent</th>
+                  <th className="py-2.5 px-4 font-medium">Status</th>
+                  <th className="py-2.5 px-4 font-medium">Budget</th>
+                  <th className="py-2.5 px-4 font-medium">Spend</th>
+                  <th className="py-2.5 px-4 font-medium">Cost/Result</th>
+                  <th className="py-2.5 px-4 font-medium">Health</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map((r) => (
+                  <tr key={r.id} className="border-b border-border last:border-0 hover:bg-surface-muted/50">
+                    <td className="py-2.5 px-4 max-w-xs">
+                      <Link href={`/campaigns/${r.id}`} className="font-medium truncate hover:underline block">
+                        {r.name}
+                      </Link>
+                      <div className="text-xs text-foreground-muted">{r.objective}</div>
+                    </td>
+                    <td className="py-2.5 px-4 text-foreground-muted">{r.clientName}</td>
+                    <td className="py-2.5 px-4 text-foreground-muted">{r.agentName ?? "—"}</td>
+                    <td className="py-2.5 px-4">
+                      <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
+                    </td>
+                    <td className="py-2.5 px-4 text-foreground-muted">
+                      {r.budgetAmount != null ? `${r.budgetCurrency ?? ""} ${r.budgetAmount} (${r.budgetType})` : "—"}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      {r.spend > 0 ? `${r.budgetCurrency ?? ""} ${r.spend.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="py-2.5 px-4">{r.costPerResult != null ? r.costPerResult.toFixed(2) : "—"}</td>
+                    <td className="py-2.5 px-4">
+                      <HealthBadge status={r.health} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {paginated.map((r) => (
+              <div key={r.id} className="border border-border rounded-[var(--radius-lg)] bg-surface p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <Link href={`/campaigns/${r.id}`} className="font-medium text-sm hover:underline">
+                    {r.name}
+                  </Link>
+                  <HealthBadge status={r.health} />
+                </div>
+                <div className="text-xs text-foreground-muted mt-0.5">{r.clientName}</div>
+                <div className="flex items-center gap-2 mt-2">
+                  <StatusBadge isEnabled={r.isEnabled} deliveryStatus={r.deliveryStatus} />
+                  <span className="text-xs text-foreground-muted">{r.objective}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <div>
+                    <div className="text-foreground-muted">Spend</div>
+                    <div className="font-medium">{r.spend > 0 ? `${r.budgetCurrency ?? ""} ${r.spend.toFixed(2)}` : "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-foreground-muted">Cost/Result</div>
+                    <div className="font-medium">{r.costPerResult != null ? r.costPerResult.toFixed(2) : "—"}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-foreground-muted">
+              Page {currentPage} of {pageCount}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft size={14} />
+                Prev
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage >= pageCount}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight size={14} />
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FilterButton({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  options: string[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="h-9 px-3 rounded-[var(--radius-sm)] border border-border bg-surface text-sm text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
+    >
+      <option value="">{label}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o.charAt(0).toUpperCase() + o.slice(1).replace("_", " ")}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-surface-muted px-2.5 py-1 text-xs text-foreground">
+      {label}
+      <button onClick={onRemove} aria-label={`Remove ${label} filter`}>
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
+function exportCsv(rows: CampaignRow[]) {
+  const header = ["Campaign", "Client", "Agent", "Status", "Objective", "Spend", "Cost/Result", "Health"];
+  const lines = rows.map((r) =>
+    [
+      r.name,
+      r.clientName,
+      r.agentName ?? "",
+      r.deliveryStatus ?? (r.isEnabled ? "active" : "paused"),
+      r.objective,
+      r.spend.toFixed(2),
+      r.costPerResult?.toFixed(2) ?? "",
+      r.health,
+    ]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .join(","),
+  );
+  const csv = [header.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `campaigns-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

@@ -1,17 +1,29 @@
 import type { HealthStatus } from "@/lib/types";
+import { Badge } from "@/components/ui/Badge";
 
-const STYLES: Record<HealthStatus, { label: string; className: string }> = {
-  profitable: { label: "🟢 On-target", className: "bg-green-100 text-green-800" },
-  watch: { label: "🟡 Watch", className: "bg-yellow-100 text-yellow-800" },
-  underperforming: { label: "🔴 Underperforming", className: "bg-red-100 text-red-800" },
-  insufficient_data: { label: "⚪ Insufficient data", className: "bg-gray-100 text-gray-600" },
+const CONFIG: Record<HealthStatus, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
+  profitable: { label: "On-target", tone: "success" },
+  watch: { label: "Watch", tone: "warning" },
+  underperforming: { label: "Underperforming", tone: "danger" },
+  insufficient_data: { label: "Insufficient data", tone: "neutral" },
 };
 
 export function HealthBadge({ status }: { status: HealthStatus }) {
-  const { label, className } = STYLES[status];
+  const { label, tone } = CONFIG[status];
   return (
-    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${className}`}>
+    <Badge tone={tone}>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          tone === "success"
+            ? "bg-success-fg"
+            : tone === "warning"
+              ? "bg-warning-fg"
+              : tone === "danger"
+                ? "bg-danger-fg"
+                : "bg-foreground-muted"
+        }`}
+      />
       {label}
-    </span>
+    </Badge>
   );
 }

@@ -1,28 +1,39 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeHealthStatus, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
-import { HealthBadge } from "@/components/HealthBadge";
-import type { Campaign, InsightSnapshot } from "@/lib/types";
+import type { Campaign, Client, InsightSnapshot } from "@/lib/types";
+import { CampaignsExplorer, type CampaignRow } from "@/components/campaigns/CampaignsExplorer";
 
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
   const supabase = createServerSupabaseClient();
 
-  const { data: campaigns, error } = await supabase
-    .from("campaigns")
-    .select(
-      "id, name, client_id, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, agent_name, target_cpl, target_cpa",
-    )
-    .is("deleted_at", null)
-    .order("updated_at", { ascending: false })
-    .returns<Campaign[]>();
+  const [{ data: campaigns, error }, { data: clients }, { data: snapshots }] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select(
+        "id, name, client_id, objective, is_enabled, delivery_status, budget_type, budget_amount, budget_currency, agent_name, target_cpl, target_cpa",
+      )
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .returns<Campaign[]>(),
+    supabase.from("clients").select("id, name").returns<Pick<Client, "id" | "name">[]>(),
+    supabase
+      .from("insight_snapshots")
+      .select("campaign_id, spend, results")
+      .returns<Pick<InsightSnapshot, "campaign_id" | "spend" | "results">[]>(),
+  ]);
 
-  // Not filtered by campaign id list: with hundreds of campaigns, .in() would
-  // build a query string past Supabase's URL length limit and fail silently.
-  const { data: snapshots } = await supabase
-    .from("insight_snapshots")
-    .select("campaign_id, spend, results")
-    .returns<Pick<InsightSnapshot, "campaign_id" | "spend" | "results">[]>();
+  if (error) {
+    return (
+      <main className="p-8">
+        <h1 className="text-xl font-semibold mb-4">Campaigns</h1>
+        <p className="text-danger-fg">Failed to load campaigns: {error.message}</p>
+      </main>
+    );
+  }
+
+  const clientNameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
 
   const totalsByCampaign = new Map<string, { spend: number; results: number }>();
   for (const s of snapshots ?? []) {
@@ -32,78 +43,36 @@ export default async function CampaignsPage() {
     totalsByCampaign.set(s.campaign_id, cur);
   }
 
-  if (error) {
-    return (
-      <main className="p-8">
-        <h1 className="text-xl font-semibold mb-4">Campaigns</h1>
-        <p className="text-red-600">Failed to load campaigns: {error.message}</p>
-      </main>
-    );
-  }
+  const rows: CampaignRow[] = (campaigns ?? []).map((c) => {
+    const totals = totalsByCampaign.get(c.id);
+    const costPerResult = totals && totals.results > 0 ? totals.spend / totals.results : null;
+    const target = c.objective === "leads" ? c.target_cpl ?? DEFAULT_TARGET_CPL : c.target_cpa ?? DEFAULT_TARGET_CPA;
+    const health = computeHealthStatus({ spend: totals?.spend ?? 0, costPerResult, target });
+
+    return {
+      id: c.id,
+      name: c.name,
+      clientName: (c.client_id && clientNameById.get(c.client_id)) || "—",
+      agentName: c.agent_name,
+      objective: c.objective,
+      isEnabled: c.is_enabled,
+      deliveryStatus: c.delivery_status,
+      budgetAmount: c.budget_amount,
+      budgetCurrency: c.budget_currency,
+      budgetType: c.budget_type,
+      spend: totals?.spend ?? 0,
+      costPerResult,
+      health,
+    };
+  });
 
   return (
-    <main className="p-8">
-      <h1 className="text-xl font-semibold mb-4">Campaigns</h1>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm border-collapse">
-          <thead>
-            <tr className="text-left border-b border-gray-300">
-              <th className="py-2 pr-4">Name</th>
-              <th className="py-2 pr-4">Objective</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Budget</th>
-              <th className="py-2 pr-4">Agent</th>
-              <th className="py-2 pr-4">Spend</th>
-              <th className="py-2 pr-4">Cost/Result</th>
-              <th className="py-2 pr-4">Health</th>
-            </tr>
-          </thead>
-          <tbody>
-            {campaigns?.map((c) => {
-              const totals = totalsByCampaign.get(c.id);
-              const costPerResult =
-                totals && totals.results > 0 ? totals.spend / totals.results : null;
-              const target =
-                c.objective === "leads"
-                  ? c.target_cpl ?? DEFAULT_TARGET_CPL
-                  : c.target_cpa ?? DEFAULT_TARGET_CPA;
-              const health = computeHealthStatus({
-                spend: totals?.spend ?? 0,
-                costPerResult,
-                target,
-              });
-
-              return (
-                <tr key={c.id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4">{c.name}</td>
-                  <td className="py-2 pr-4">{c.objective}</td>
-                  <td className="py-2 pr-4">
-                    {c.is_enabled ? "Enabled" : "Disabled"} / {c.delivery_status ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {c.budget_amount != null
-                      ? `${c.budget_currency ?? ""} ${c.budget_amount} (${c.budget_type})`
-                      : "—"}
-                  </td>
-                  <td className="py-2 pr-4">{c.agent_name ?? "—"}</td>
-                  <td className="py-2 pr-4">
-                    {totals ? `${c.budget_currency ?? ""} ${totals.spend.toFixed(2)}` : "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {costPerResult != null ? costPerResult.toFixed(2) : "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <HealthBadge status={health} />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {campaigns?.length === 0 && (
-          <p className="text-gray-500 mt-4">No campaigns found.</p>
-        )}
+    <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
+        <p className="text-sm text-foreground-muted mt-1">{rows.length} campaigns across all clients</p>
       </div>
+      <CampaignsExplorer rows={rows} />
     </main>
   );
 }
