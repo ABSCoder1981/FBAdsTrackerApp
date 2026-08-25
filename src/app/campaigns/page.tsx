@@ -20,6 +20,7 @@ export default async function CampaignsPage() {
     supabase
       .from("insight_snapshots")
       .select("campaign_id, date, spend, results")
+      .eq("level", "campaign")
       .returns<Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "results">[]>(),
   ]);
 

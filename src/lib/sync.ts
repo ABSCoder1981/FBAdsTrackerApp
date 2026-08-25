@@ -21,6 +21,8 @@ interface FbInsightRow {
   clicks?: string;
   actions?: FbAction[];
   date_start: string;
+  publisher_platform?: string;
+  platform_position?: string;
 }
 
 function extractResults(objective: string | null, actions: FbAction[] | undefined): number {
@@ -36,6 +38,27 @@ function extractResults(objective: string | null, actions: FbAction[] | undefine
   return linkClicks ? Number(linkClicks.value) : 0;
 }
 
+async function fetchInsights(
+  adAccountId: string,
+  token: string,
+  breakdowns?: string,
+): Promise<FbInsightRow[]> {
+  const url = new URL(`https://graph.facebook.com/${FB_API_VERSION}/${adAccountId}/insights`);
+  url.searchParams.set("level", "campaign");
+  url.searchParams.set("fields", "campaign_id,spend,impressions,clicks,actions");
+  url.searchParams.set("time_increment", "1");
+  url.searchParams.set("date_preset", "yesterday");
+  url.searchParams.set("access_token", token);
+  if (breakdowns) url.searchParams.set("breakdowns", breakdowns);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Meta API error ${res.status}: ${await res.text()}`);
+  }
+  const { data } = (await res.json()) as { data: FbInsightRow[] };
+  return data ?? [];
+}
+
 export async function runSync(): Promise<{ fetched: number; upserted: number; skipped: number }> {
   const adAccountId = process.env.FACEBOOK_AD_ACCOUNT_ID;
   const token = process.env.FACEBOOK_SYSTEM_USER_TOKEN;
@@ -46,26 +69,21 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
 
   const supabase = createServerSupabaseClient();
 
-  const insightsUrl = new URL(
-    `https://graph.facebook.com/${FB_API_VERSION}/${adAccountId}/insights`,
-  );
-  insightsUrl.searchParams.set("level", "campaign");
-  insightsUrl.searchParams.set("fields", "campaign_id,spend,impressions,clicks,actions");
-  insightsUrl.searchParams.set("time_increment", "1");
-  insightsUrl.searchParams.set("date_preset", "yesterday");
-  insightsUrl.searchParams.set("access_token", token);
+  // Two pulls: aggregate campaign-level (level='campaign', no breakdown) and
+  // placement breakdown (level='placement', breakdown_dimension=
+  // "publisher_platform/platform_position") — docs/CAMPAIGN_INTELLIGENCE_SPEC.md
+  // §6D, confirmed to have real differentiation for this account (unlike
+  // Geography, §6E — tested and reverted, see spec §0).
+  const [campaignRows, placementRows] = await Promise.all([
+    fetchInsights(adAccountId, token),
+    fetchInsights(adAccountId, token, "publisher_platform,platform_position"),
+  ]);
 
-  const res = await fetch(insightsUrl);
-  if (!res.ok) {
-    throw new Error(`Meta API error ${res.status}: ${await res.text()}`);
-  }
-  const { data } = (await res.json()) as { data: FbInsightRow[] };
-
-  if (!data || data.length === 0) {
+  if (campaignRows.length === 0) {
     return { fetched: 0, upserted: 0, skipped: 0 };
   }
 
-  const externalIds = [...new Set(data.map((r) => r.campaign_id))];
+  const externalIds = [...new Set([...campaignRows, ...placementRows].map((r) => r.campaign_id))];
   const { data: campaigns, error: campaignsErr } = await supabase
     .from("campaigns")
     .select("id, external_id, objective")
@@ -78,11 +96,11 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
   let upserted = 0;
   let skipped = 0;
 
-  for (const row of data) {
+  async function upsertRow(row: FbInsightRow, level: string, breakdownDimension: string) {
     const campaign = byExternalId.get(row.campaign_id);
     if (!campaign) {
       skipped++;
-      continue;
+      return;
     }
 
     const spend = Number(row.spend || 0);
@@ -93,7 +111,7 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
       {
         campaign_id: campaign.id,
         date: row.date_start,
-        level: "campaign",
+        level,
         spend,
         impressions: Number(row.impressions || 0),
         clicks: Number(row.clicks || 0),
@@ -101,7 +119,7 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
         cost_per_result: costPerResult,
         // "" not null — Postgres treats NULL <> NULL, which broke the unique
         // constraint's ON CONFLICT matching (migration 0004).
-        breakdown_dimension: "",
+        breakdown_dimension: breakdownDimension,
       },
       { onConflict: "campaign_id,date,level,breakdown_dimension" },
     );
@@ -110,5 +128,13 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
     upserted++;
   }
 
-  return { fetched: data.length, upserted, skipped };
+  for (const row of campaignRows) {
+    await upsertRow(row, "campaign", "");
+  }
+  for (const row of placementRows) {
+    const dimension = `${row.publisher_platform ?? "unknown"}/${row.platform_position ?? "unknown"}`;
+    await upsertRow(row, "placement", dimension);
+  }
+
+  return { fetched: campaignRows.length + placementRows.length, upserted, skipped };
 }

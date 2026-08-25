@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { MiniFunnel } from "@/components/campaigns/MiniFunnel";
+import { PlacementTable } from "@/components/campaigns/PlacementTable";
 import type { Campaign, InsightSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,14 +29,38 @@ export default async function CampaignDetailPage({
 
   if (!campaign) notFound();
 
-  const { data: snapshots } = await supabase
-    .from("insight_snapshots")
-    .select("date, spend, impressions, clicks, results, cost_per_result")
-    .eq("campaign_id", id)
-    .order("date", { ascending: false })
-    .returns<InsightSnapshot[]>();
+  const [{ data: snapshots }, { data: placementSnapshots }] = await Promise.all([
+    supabase
+      .from("insight_snapshots")
+      .select("date, spend, impressions, clicks, results, cost_per_result")
+      .eq("campaign_id", id)
+      .eq("level", "campaign")
+      .order("date", { ascending: false })
+      .returns<InsightSnapshot[]>(),
+    supabase
+      .from("insight_snapshots")
+      .select("breakdown_dimension, spend, impressions, clicks, results")
+      .eq("campaign_id", id)
+      .eq("level", "placement")
+      .returns<Pick<InsightSnapshot, "breakdown_dimension" | "spend" | "impressions" | "clicks" | "results">[]>(),
+  ]);
 
   const rows = snapshots ?? [];
+
+  const placementTotals = new Map<string, { spend: number; impressions: number; clicks: number; results: number }>();
+  for (const p of placementSnapshots ?? []) {
+    const dimension = p.breakdown_dimension ?? "unknown/unknown";
+    const cur = placementTotals.get(dimension) ?? { spend: 0, impressions: 0, clicks: 0, results: 0 };
+    cur.spend += p.spend;
+    cur.impressions += p.impressions;
+    cur.clicks += p.clicks;
+    cur.results += p.results;
+    placementTotals.set(dimension, cur);
+  }
+  const placementRows = [...placementTotals.entries()].map(([dimension, totals]) => ({
+    dimension,
+    ...totals,
+  }));
   const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
   const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0);
   const totalClicks = rows.reduce((s, r) => s + r.clicks, 0);
@@ -126,6 +151,13 @@ export default async function CampaignDetailPage({
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader title="Placement" description="Spend and results by Facebook/Instagram placement (all-time synced)" />
+        <CardBody>
+          <PlacementTable rows={placementRows} />
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader title="Daily snapshots" description="From synced insight_snapshots rows" />

@@ -15,7 +15,8 @@ Every module below is tagged with a status. Read this table before estimating an
 | Campaign metadata (name, objective, status, budget) | ✅ Yes | Live `campaigns` table |
 | Daily spend, impressions, clicks, results, cost/result | ✅ Yes | `insight_snapshots`, synced from Meta Insights API (campaign level only) |
 | CPL vs. target, basic health/decision label | ✅ Yes | Current 4-state health system (`src/lib/health.ts`) |
-| Ad set / ad-level breakdowns (Creative, Audience, Placement) | ❌ No | Needs new Meta Insights sync at `level=ad`/`level=adset` with breakdown params — not built |
+| Ad set / ad-level breakdowns (Creative, Audience) | ❌ No | Needs new Meta Insights sync at `level=ad`/`level=adset` with breakdown params — not built |
+| Placement breakdown | ✅ Shipped 2026-08-25 | Campaign-level `breakdowns=publisher_platform,platform_position` — no ad-set sync needed, see §6D |
 | Geography breakdown | ⚠️ Tested, not useful | `breakdowns=country/region` works, but every campaign returns `IN`/`Maharashtra` — no differentiation to build a view around (§6E) |
 | Landing page views, funnel stages beyond "results" | ❌ No | Meta only gives us `actions` (leads/clicks); no landing-page or CRM funnel data |
 | Qualified Leads, Opportunities, Sales, Revenue | ❌ No | **No CRM or sales pipeline is connected.** This is the single biggest gap — most of §6F (Financials) and the funnel's bottom half depend on it |
@@ -191,8 +192,10 @@ Needs `level=ad` Meta Insights sync with creative metadata (format, thumbnail, h
 ### 6C. Audience Analysis — blocked
 Needs `level=adset` sync + targeting metadata + `breakdowns=age,gender` etc. Same category as 6B — real Phase 2 work, not research-blocked.
 
-### 6D. Placement Analysis — blocked
-Needs `breakdowns=publisher_platform,platform_position`. Same category as 6B/6C.
+### 6D. Placement Analysis — shipped 2026-08-25, reduced form
+Unlike 6B/6C, this needed no ad-set/ad-level sync — `breakdowns=publisher_platform,platform_position` works at campaign level, tested live against the real account and confirmed to have real differentiation (7 distinct placements per campaign: Facebook Feed/Reels/Stories/Marketplace/Search/Notifications, Instagram Feed — meaningfully different spend and CTR). Shipped on Campaign Detail as a Placement table: spend, impressions, clicks, CTR, results, cost/result per placement, sorted by spend, with Best/Worst tags gated by a scaled-down spend threshold (10% of `MIN_SPEND_FOR_JUDGEMENT`) so a placement with negligible spend and a lucky-looking CPL doesn't get flagged Best (same insufficient-data protection as the campaign-level Decision, spec Principle 6).
+
+**Still reduced from the full spec:** no per-ad creative attribution within a placement (needs 6B's ad-level sync), no historical/previous-period comparison yet (only all-time-synced totals). Note for implementers: `insight_snapshots.level` now has three values in production (`campaign`, `placement`, and previously-tested-then-reverted `geo`) — any new query against this table must filter by `level` or it will double-count across breakdown types. This bit the initial Campaign Detail page (fixed same day, before shipping placement data) — see git history around 2026-08-25 if debugging a spend/results figure that looks doubled.
 
 ### 6E. Geography Analysis — tested 2026-08-25, not worth building
 Not blocked by data access — `breakdowns=country` and `breakdowns=region` both work today, no new tables needed (reuses `insight_snapshots.level`/`breakdown_dimension`). Tested live against the real ad account: **every campaign returns `country=IN`, `region=Maharashtra`** — Meta's finest available geography breakdown for this market is state-level, and there's only one state. A "best/worst geography" view has nothing to differentiate on some real accounts. **Decision: not building this** — not a data-access blocker like the other 6B–6D modules, a data-shape one. Revisit only if the agency ever runs campaigns spanning multiple states; the sync-side implementation (tested, then reverted) is straightforward to re-add if that changes.
@@ -309,7 +312,8 @@ The third row is deliberately included to demonstrate Principle 6: a naive syste
 | Executive Dashboard (`/`) | 1 | Exists, needs reshaping per §3 |
 | Campaign List (`/campaigns`) | 1 | Exists, needs extension per §4 |
 | Campaign Detail (`/campaigns/[id]`) | 1 | Exists, needs extension per §5 |
-| Funnel / Creative / Audience / Placement tabs | 2/3 | Not built — blocked on Meta ad-set/ad sync |
+| Placement (Campaign Detail card) | 2 | Shipped 2026-08-25, reduced form (§6D) |
+| Funnel (mini) / Creative / Audience tabs | 1/2/3 | Mini funnel shipped (§6A); Creative/Audience not built — blocked on Meta ad-set/ad sync |
 | Geography tab | — | Not building — tested, no differentiation in the real data (§6E) |
 | Financials tab | 3+ | Not built — blocked on CRM/revenue, business decision needed first |
 | Prediction tab | 4 | Not built — blocked on history + forecast model choice |
