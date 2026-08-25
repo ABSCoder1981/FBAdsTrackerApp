@@ -6,9 +6,11 @@
 
 **Solution:** An internal web dashboard that auto-syncs with the Facebook Marketing API and surfaces campaign counts, spend, performance, and profitability at a glance — with drill-down and alerting.
 
+**Product direction (2026-08-25):** The target product is not a reporting dashboard but a **decision-support system** — a stakeholder should be able to look at a campaign and get a clear Scale / Continue / Optimize / Pause-Watch / Close recommendation with evidence, not just raw metrics. The full target architecture (Executive Dashboard → Campaign List → Campaign Detail → Analysis Modules → Deep Analysis → Decision Center) is specified in [`docs/CAMPAIGN_INTELLIGENCE_SPEC.md`](./docs/CAMPAIGN_INTELLIGENCE_SPEC.md). See §13 below for how that target maps onto what's actually buildable today. **Agent and Client are permanently out of scope** for this direction — both were found to be contaminated data (§4.1, §12 Q7/Q9) and are not part of the product going forward.
+
 **Owner:** [fill in]
 **Target users:** Internal marketing/growth team (multiple users, role-based access)
-**Status:** Draft v1
+**Status:** Draft v2 — decision-support direction, phased against real data availability (§13)
 
 ---
 
@@ -68,18 +70,21 @@ Key findings that change the PRD:
 
 ## 5. Core Concept: "Is this campaign beneficial?"
 
+**Superseded 2026-08-25** by the 5-state Decision taxonomy in [`docs/CAMPAIGN_INTELLIGENCE_SPEC.md`](./docs/CAMPAIGN_INTELLIGENCE_SPEC.md) §8 — kept here for history. The original 4-state Health Status (Profitable/Watch/Underperforming/Insufficient data, `src/lib/health.ts`) becomes the **Phase 1 rule-based implementation** of the new taxonomy (🟢 Scale, 🟢 Continue, 🟡 Optimize, 🟠 Watch, 🔴 Close) — same underlying CPL/CPA-vs-target logic, remapped into 5 labels with a sustained-trend requirement instead of a single-day miss. See spec §7–§8 for the exact rules and why the full multi-factor Health Score (Profitability/Lead Quality/ROAS/Creative weights) stays blocked until revenue and ad-set data exist.
+
 Profitability is **configurable per campaign** (different campaign objectives need different rules), combining two rule types:
 
-1. **ROAS-based** — `Revenue ÷ Spend`. Campaign flagged beneficial if ROAS ≥ target (e.g. 2.0x), unprofitable if below break-even ROAS.
-2. **Cost-per-result vs target** — for campaigns without clean revenue data (lead gen, awareness), compare actual CPL/CPA/CPC against a user-set target ceiling.
+1. **ROAS-based** — `Revenue ÷ Spend`. Campaign flagged beneficial if ROAS ≥ target (e.g. 2.0x), unprofitable if below break-even ROAS. **Still deferred** — no revenue source exists (§12 Q2).
+2. **Cost-per-result vs target** — for campaigns without clean revenue data (lead gen, awareness), compare actual CPL/CPA/CPC against a user-set target ceiling. **This is the only rule in production use today.**
 
-Each campaign gets a **Health Status** derived from whichever rule applies to it:
-- 🟢 **Profitable/On-target** — meets or beats target
-- 🟡 **Watch** — within a configurable buffer (e.g. within 10–15% of target)
-- 🔴 **Underperforming** — misses target for N consecutive days (configurable, default 3)
-- ⚪ **Insufficient data** — too little spend/results to judge yet (configurable minimum spend threshold, e.g. don't judge under $50 spent)
+Each campaign gets a **Decision** derived from whichever rule applies to it:
+- 🟢 **Scale** — meaningfully beats target (not just meets it)
+- 🟢 **Continue** — meets target
+- 🟡 **Optimize** — within a configurable buffer of target (e.g. within 15%)
+- 🟠 **Watch** — too little spend/days-synced to judge yet (configurable minimum threshold) — this state always wins over a confident-looking bad number (spec Principle 6)
+- 🔴 **Close** — misses target beyond the buffer, sustained over the trend window (not a single bad day)
 
-Status is computed nightly and shown as a badge everywhere the campaign appears.
+Status is computed on read (server-rendered per page load today; nightly precompute is a future optimization, not a correctness requirement) and shown as a badge everywhere the campaign appears.
 
 ---
 
@@ -275,6 +280,8 @@ Report (type, recipients, schedule, last_sent_at)
 
 ## 11. Phased Roadmap
 
+**Superseded 2026-08-25 — see §13 for the current phased plan**, kept here for history. §13's phasing is driven by data-source dependency (spec §0) rather than feature groupings, since most of the original Phase 2/3 items turned out to need a data source that doesn't exist yet (CRM/revenue) rather than just more engineering time.
+
 **Phase 1 (MVP)**
 - FB API connection (single Business Manager, multiple ad accounts)
 - Campaign list + overview dashboard
@@ -300,10 +307,95 @@ Report (type, recipients, schedule, last_sent_at)
 
 1. Which Business Manager / ad account(s) connect first — confirm access is available? *(still open — using the existing `FACEBOOK_SYSTEM_USER_TOKEN`/`FACEBOOK_AD_ACCOUNT_ID` in `.env.local` as the first connection)*
 2. ~~Where does revenue data come from for ROAS?~~ **Resolved 2026-08-25:** out of scope for v1. CPL/CPA vs target is the sole health rule; revenue/ROAS deferred to a later phase pending a CRM/sale-conversion data source.
-3. ~~What are the default ROAS/CPA targets?~~ **Resolved 2026-08-25:** seed with reasonable placeholder defaults org-wide at launch (tunable per-`Client` once real data establishes typical CPL by locality/unit type); not blocking Phase 0/1 start.
+3. ~~What are the default ROAS/CPA targets?~~ **Resolved 2026-08-25, amended 2026-08-25:** seed with reasonable placeholder defaults org-wide at launch; not blocking Phase 0/1 start. (Originally said "tunable per-Client" — moot now that Client is permanently out of scope, Q9.)
 4. Any compliance/data-residency requirement for storing ad account data? *(none specified — assuming none for v1)*
 5. ~~Who are the initial Viewer-role stakeholders?~~ **Resolved 2026-08-25:** Viewer role is internal-agency only for v1; no client-facing portal.
 6. ~~Where does account-level data live?~~ **Resolved 2026-08-25:** deferred — no `ad_accounts` table in Phase 1; revisit if/when account-level grouping becomes a real need.
-7. **Reopened 2026-08-25.** Should `agent_name` be formalized into `agent_id → User`? Initially resolved "yes" and built in Phase 0, then reverted the same day: real data shows `agent_name` frequently holds a property/project name, not a salesperson (see §4.1 update) — formalizing it built a directory of fake agents. No reliable source for agent identity exists in the data collected today. Answering this needs either (a) a real intake process that captures agent assignment structurally going forward, or (b) accepting agent-level reporting is out of scope until one exists. The app currently shows no agent/salesperson attribution anywhere.
-8. **Reopened 2026-08-25** (was resolved "yes, build one in Phase 0"). The `clients` table built on 2026-08-25 turned out to already exist since 2026-07-21 (pre-dates this project) and, per the §4.1 update, its 86 rows are mostly agent names/localities, not builders/properties. The `locality`/`unit_types`/`builder_name` columns added in Phase 0 are unpopulated. Adding structured columns didn't fix bad row identity — the question is now "where does *real* client identity come from," not "does a table exist."
-9. **New 2026-08-25.** What is the actual source of truth for "which client/property does this campaign belong to"? Options to explore with the user: (a) a spreadsheet or CRM outside Supabase that has the real client list, (b) the agency's own records/memory — i.e. this needs manual re-tagging, (c) accept that campaign-to-client attribution isn't reliably knowable yet and scope client-level features out of v1 entirely (current app state, as of 2026-08-25 — Client removed from Campaigns list, Campaign Detail, and nav). Blocks: §7.2 filter/group by client, §7.6 client-scoped tags, any per-client target defaults (§12 Q3), and the client-facing Viewer role possibility raised in §12 Q5.
+7. **Closed 2026-08-25 (permanent, not just reopened).** Should `agent_name` be formalized into `agent_id → User`? Initially resolved "yes" and built in Phase 0, reverted the same day once real data showed `agent_name` frequently holds a property/project name, not a salesperson. **Decision: agent identity is permanently out of scope for this product's direction** (per the 2026-08-25 Campaign Intelligence pivot, `docs/CAMPAIGN_INTELLIGENCE_SPEC.md`) — not "revisit later," just not part of the design. No further agent-identity work should be proposed unless the user explicitly reopens it.
+8. **Closed 2026-08-25 (permanent).** ~~Is there a canonical Client/property table?~~ The `clients` table's 86 rows turned out to be mostly agent names/localities, not builders. **Decision: Client is permanently out of scope**, same as Q7 — not a data-quality problem to eventually fix, a scope decision. `docs/CAMPAIGN_INTELLIGENCE_SPEC.md` is explicitly campaign-centric only.
+9. **Closed 2026-08-25 (permanent), superseded by Q7/Q8's closure.** Client display was removed from Campaigns list, Campaign Detail, and nav on 2026-08-25 and stays removed as a design decision, not a temporary gap.
+10. **New 2026-08-25.** Financial Analysis (`docs/CAMPAIGN_INTELLIGENCE_SPEC.md` §6F) needs a revenue source, and none exists. This is a **business decision**, not an engineering one: does the agency want to connect a CRM or sales-tracking system at all? Until answered, Revenue/Profit/ROAS/CAC/Sales stay out of every screen (Dashboard, Campaign List, Campaign Detail) rather than showing zeros or placeholders.
+
+---
+
+## 13. Campaign Intelligence Architecture (target direction, 2026-08-25)
+
+**This is the current product direction**, replacing the original "reporting dashboard" framing (§1, §5, §11 above are kept for history and marked superseded where applicable). Full UX/screen spec: [`docs/CAMPAIGN_INTELLIGENCE_SPEC.md`](./docs/CAMPAIGN_INTELLIGENCE_SPEC.md). This section is the PRD-level summary — data availability, phasing, and the concrete Phase 1 changes.
+
+### 13.1 What changed
+
+The target system is a **decision-support tool**: every campaign resolves to one of five decisions (Scale / Continue / Optimize / Watch / Close) with visible evidence, reached by progressive drill-down (Summary → Evidence → Root Cause → Prediction → Decision) rather than a flat metrics table. Agent and Client are permanently excluded (§12 Q7–Q9) — this is campaign-centric by design, not by current limitation.
+
+### 13.2 Data availability matrix
+
+The single most important constraint on this direction: most of the target spec depends on data sources that don't exist yet. Full matrix in spec §0; summary:
+
+| Have today | Don't have (blocks most of the spec) |
+|---|---|
+| Campaign metadata, daily spend/impressions/clicks/results (campaign-level only) | Ad set/ad-level data (Creative, Audience, Placement breakdowns) |
+| CPL vs. target, 4-state health (→ becomes 5-state Decision, §13.4) | Geography breakdown |
+| — | **Revenue, Profit, ROAS, CAC, Sales, Qualified Leads — no CRM connected (§12 Q10)** |
+| — | Forecasting/prediction (no model, insufficient history) |
+| — | Decision persistence/audit trail (no `decisions` table, no real auth) |
+
+Consequence: Levels 1–3 of the spec (Executive Dashboard, Campaign List, Campaign Detail) ship in **reduced form** — real CPL/spend/results data, decision labels, no revenue/profit/ROAS anywhere. Levels 4–6 (Analysis Modules, Deep Analysis, Decision Center) are documented but not built.
+
+### 13.3 Revised phased roadmap
+
+Supersedes §11. Phases are ordered by data dependency, not feature area:
+
+**Phase 1 (current — in progress)**
+- Reshape Dashboard/Campaign List/Campaign Detail per spec §3–§5 (CPL/CPA-only, no revenue cards)
+- Remap the 4-state health system to the 5-state Decision taxonomy (§13.4)
+- Data Confidence gating (days-synced + min-spend) — real today, ship it
+- Mini funnel (Impressions → Clicks → Leads) on Campaign Detail — the one funnel slice that's fully real today
+
+**Phase 2 (needs: more sync history + new Meta API calls, no new external systems)**
+- Ad set/ad-level Meta Insights sync → unblocks Creative, Audience, Placement, Geography modules (spec §6B–6E)
+- Anomaly detection, once ≥14 consecutive synced days exist per campaign (spec §9)
+- Alerting engine + scheduled reports (from original §11 Phase 2, unaffected by this pivot)
+
+**Phase 3 (needs: new external systems + real auth)**
+- CRM/revenue integration — **business decision required first** (§12 Q10), not just engineering
+- Real authentication/`users` (current `users` table is empty since the agent-formalization revert) → unblocks Decision Center + Decision History (spec §10)
+- Full Financial Analysis module (spec §6F), Health Score's profitability/ROAS/lead-quality factors (spec §7)
+
+**Phase 4 (needs: Phase 3 data + enough history to model against)**
+- Forecasting/Prediction module (spec §6G, §11)
+- Full multi-factor Health Score (spec §7)
+- Root-cause engine (spec §8's `poor_landing_page_conversion`/`creative_fatigue`/etc. reason codes)
+- Budget Optimizer
+
+**Phase 5**
+- Prediction Accuracy dashboard (spec §11) — only meaningful once Phase 4 forecasts have run for ≥1 full comparison period
+
+### 13.4 Decision taxonomy — Phase 1 implementation
+
+Replaces `HealthStatus` (`profitable`/`watch`/`underperforming`/`insufficient_data` in `src/lib/health.ts`) with a 5-state `Decision` type. Mapping:
+
+| Old `HealthStatus` | New `Decision` | Rule change |
+|---|---|---|
+| `profitable` | `scale` if `cost_per_result ≤ target × 0.8`, else `continue` | Split one state into two by margin |
+| `watch` | `optimize` | Rename only |
+| `underperforming` | `close` | Rename, **add** sustained-trend requirement (miss target over the trend window, not a single day) |
+| `insufficient_data` | `watch` | Rename only — note the label collision with old `watch`; this is intentional per spec §8's table, source of confusion to flag in code review |
+
+Implementation note for whoever picks this up: `computeHealthStatus` in `src/lib/health.ts` and `DECISION_COPY` need to change together; every call site (`src/app/page.tsx`, `src/components/campaigns/CampaignsExplorer.tsx`, `src/app/campaigns/[id]/page.tsx`, `src/components/HealthBadge.tsx`) currently imports the 4-state type and will need updating. Not done as part of this PRD update — this is a scoped follow-up task, not a docs-only change.
+
+### 13.5 Navigation migration
+
+Current nav (`src/components/shell/navItems.ts`): Dashboard, Campaigns, Analytics, Spend, Reports.
+Target nav (spec §2): Dashboard, Campaigns (with Scale/Continue/Optimize/Watch/Close quick filters), Analysis, Intelligence, Optimization, Decisions, Reports, Settings.
+
+| Current item | Target item | Phase it becomes real |
+|---|---|---|
+| Dashboard | Dashboard (Executive Overview) | 1 (reshaped) |
+| Campaigns | Campaigns (+ decision quick filters) | 1 (extended) |
+| Analytics | Analysis (Funnel/Creative/Audience/Placement/Geography) | 2 |
+| Spend | folds into Analysis → Financials, or stays standalone until Financials exists | 3 for Financials; Spend as-is can stay a Phase 1 placeholder |
+| Reports | Reports (Executive/Campaign) | 1–2, mostly buildable now |
+| — | Intelligence (Prediction/Alerts/Anomalies/Benchmarks) | 2 (Alerts/Anomalies) / 4 (Prediction) |
+| — | Decisions (Queue/History) | 3 |
+| — | Optimization (Budget Optimizer) | 4/5 |
+
+Do not add nav items for Phase 2+ sections until they have real content — an empty "Analysis" tab is worse than not having the tab (spec Principle 8).
