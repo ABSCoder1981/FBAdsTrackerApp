@@ -41,4 +41,5 @@ export interface InsightSnapshot {
   results: number;
   cost_per_result: number | null;
   breakdown_dimension: string | null;
+  created_at: string;
 }

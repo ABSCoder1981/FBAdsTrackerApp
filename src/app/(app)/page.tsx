@@ -26,7 +26,7 @@ const DECISION_ORDER: Decision[] = ["scale", "continue", "optimize", "watch", "c
 
 type SnapshotRow = Pick<
   InsightSnapshot,
-  "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results"
+  "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results" | "created_at"
 >;
 
 function aggregate(snapshots: SnapshotRow[] | null) {
@@ -75,31 +75,28 @@ export default async function OverviewPage({
 
   const supabase = createServerSupabaseClient();
 
-  let campaignsQuery = supabase
-    .from("campaigns")
-    .select("id", { count: "exact", head: true })
-    .is("deleted_at", null);
-  let activeQuery = supabase
-    .from("campaigns")
-    .select("id", { count: "exact", head: true })
-    .is("deleted_at", null)
-    .eq("is_enabled", true);
+  // Was 6 separate round trips (2 of them — active/total count — pure
+  // duplicates of data already in this query, and this query itself was
+  // capped at 500 rows even though there are 972 real campaigns, silently
+  // dropping ~470 from the Decision strip and "needs attention" table).
+  // Each round trip to Supabase costs ~300-600ms of fixed overhead
+  // regardless of how much data comes back — cutting round trips matters
+  // far more than trimming row counts. Down to 2-3 round trips now.
   let allCampaignsQuery = supabase
     .from("campaigns")
     .select(
       "id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at, budget_type, budget_amount, budget_currency",
     )
     .is("deleted_at", null)
-    .order("updated_at", { ascending: false })
-    .limit(500);
+    .order("updated_at", { ascending: false });
 
   if (objective) {
-    campaignsQuery = campaignsQuery.eq("objective", objective);
-    activeQuery = activeQuery.eq("objective", objective);
     allCampaignsQuery = allCampaignsQuery.eq("objective", objective);
   }
 
-  const snapshotsSelect = "campaign_id, date, spend, impressions, clicks, results";
+  // created_at added so "last synced" can be derived from this same fetch
+  // instead of a dedicated 6th query.
+  const snapshotsSelect = "campaign_id, date, spend, impressions, clicks, results, created_at";
   let snapshotsQuery = supabase.from("insight_snapshots").select(snapshotsSelect).eq("level", "campaign");
 
   // Previous-period comparison needs a second, equal-length window
@@ -133,25 +130,24 @@ export default async function OverviewPage({
     }
   }
 
-  const [
-    { count: activeCount },
-    { count: totalCount },
-    { data: campaigns },
-    { data: snapshots },
-    { data: previousSnapshots },
-    { data: lastSync },
-  ] = await Promise.all([
-    activeQuery,
-    campaignsQuery,
+  const [{ data: campaigns }, { data: snapshots }, { data: previousSnapshots }] = await Promise.all([
     allCampaignsQuery.returns<Campaign[]>(),
     snapshotsQuery.returns<SnapshotRow[]>(),
     previousSnapshotsPromise,
-    supabase.from("insight_snapshots").select("created_at").order("created_at", { ascending: false }).limit(1),
   ]);
+
+  const activeCount = (campaigns ?? []).filter((c) => c.is_enabled).length;
+  const totalCount = (campaigns ?? []).length;
 
   const { totalsByCampaign, totalsByDate, totalSpend, totalImpressions, totalClicks, totalResults } =
     aggregate(snapshots);
   const prev = aggregate(previousSnapshots);
+
+  const lastSyncedAt = (snapshots ?? []).reduce<Date | null>((max, s) => {
+    if (!s.created_at) return max;
+    const d = new Date(s.created_at);
+    return !max || d > max ? d : max;
+  }, null);
 
   const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
   const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
@@ -230,8 +226,6 @@ export default async function OverviewPage({
   const resultsSparkline = chartData.map((d) => d.results);
   const impressionsSparkline = chartData.map((d) => d.impressions);
   const clicksSparkline = chartData.map((d) => d.clicks);
-
-  const lastSyncedAt = lastSync?.[0]?.created_at ? new Date(lastSync[0].created_at) : null;
 
   const now = new Date();
   const hour = now.getHours();
