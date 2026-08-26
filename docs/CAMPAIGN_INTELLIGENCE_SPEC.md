@@ -105,7 +105,9 @@ Each buildable card shows: current value, % change vs. previous period of equal 
 
 **Campaign Performance Overview table** — same table as Level 2, truncated to top ~8 rows sorted by urgency (Close first, then Watch, then Optimize), with a "View all campaigns →" link. Columns available today: Campaign, Status, Spend, Results, CPL, Health/Decision. Columns not available: Qualified Leads, Sales, Revenue, ROAS, Profit, Score (the 0-100 score needs the full weighted model, §7 — a placeholder score would violate Principle 8).
 
-**Not built at all in Phase 1:** Prediction Summary donut, Spend vs Budget card (no budget-consumption tracking exists — `campaigns.budget_amount` is per-campaign daily/lifetime, not yet rolled up against actual spend pacing), Top Performing Campaign card (depends on ROAS/profit ranking, no revenue), Alerts panel (needs the anomaly detection engine, §9).
+**Not built:** Prediction Summary donut (no forecast model — would be fabricating a confidence number), Top Performing Campaign card (depends on ROAS/profit ranking, no revenue), Alerts panel (needs the anomaly detection engine, §9).
+
+**Spend vs Budget — shipped 2026-08-26** (was originally listed here as not built, then a user report caught that it was a real gap, not a deliberate decision — the data to build it honestly already existed). Rolls up each campaign's allocated budget (daily: `budget_amount × days synced`; lifetime: `budget_amount` as a cap) against actual spend, restricted to campaigns with a budget set and ≥1 synced day. Explicitly *not* the same thing as the reference mockup's account-level "Spend vs Budget" bar — there's no account-level budget cap in this schema (§12 Q6), so the card's copy says so rather than implying a number that doesn't exist.
 
 **Empty state:** No campaigns synced yet → "Run a sync to populate this dashboard" + Sync Now button (already built).
 **Loading state:** Skeleton KPI cards + skeleton table rows (already built via `Skeleton` component).

@@ -72,6 +72,7 @@ export function SpendChart({ data }: { data: Point[] }) {
               border: "1px solid #e5e5e8",
               fontSize: 12,
             }}
+            formatter={(value) => Number(value).toFixed(2)}
           />
           <Area
             type="monotone"

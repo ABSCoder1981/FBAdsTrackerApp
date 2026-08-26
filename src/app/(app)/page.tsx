@@ -52,7 +52,9 @@ export default async function OverviewPage({
     .eq("is_enabled", true);
   let allCampaignsQuery = supabase
     .from("campaigns")
-    .select("id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at")
+    .select(
+      "id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at, budget_type, budget_amount, budget_currency",
+    )
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
     .limit(500);
@@ -136,6 +138,28 @@ export default async function OverviewPage({
     decisionCounts[decision]++;
     evaluated.push({ campaign: c, decision, reasons, costPerResult, target, spend: totals?.spend ?? 0 });
   }
+
+  // Spend vs Budget: sums each campaign's *allocated* budget against its
+  // actual spend over the same synced window. "Allocated" for a daily
+  // budget is budget_amount × days synced (there's no account-level budget
+  // cap to compare against, unlike the reference mockup — PRD §12 Q6); for
+  // a lifetime budget it's just budget_amount. Only counts campaigns that
+  // have a budget set and at least one synced day, so this stays traceable
+  // to real numbers rather than a guess (spec Principle 8).
+  let budgetAllocated = 0;
+  let budgetSpend = 0;
+  let budgetCampaignCount = 0;
+  for (const c of campaigns ?? []) {
+    if (c.budget_amount == null) continue;
+    const totals = totalsByCampaign.get(c.id);
+    const daysSynced = totals?.dates.size ?? 0;
+    if (daysSynced === 0) continue;
+    const allocated = c.budget_type === "daily" ? c.budget_amount * daysSynced : c.budget_amount;
+    budgetAllocated += allocated;
+    budgetSpend += totals!.spend;
+    budgetCampaignCount++;
+  }
+  const budgetPct = budgetAllocated > 0 ? Math.min(100, (budgetSpend / budgetAllocated) * 100) : null;
 
   // Owner's core question: which campaigns need a decision right now? Worst
   // cost-per-result overrun first, so the most urgent calls surface at the top.
@@ -223,15 +247,44 @@ export default async function OverviewPage({
           </CardFooter>
         </Card>
 
-        {/* Decision summary (list form) */}
-        <Card>
-          <CardHeader title="Decision summary" description="CPL/CPA vs target, all campaigns" />
-          <CardBody className="space-y-3">
-            {DECISION_ORDER.map((d) => (
-              <DecisionRow key={d} label={DECISION_LABELS[d]} tone={DECISION_TONES[d]} count={decisionCounts[d]} />
-            ))}
-          </CardBody>
-        </Card>
+        <div className="space-y-4">
+          {/* Decision summary (list form) */}
+          <Card>
+            <CardHeader title="Decision summary" description="CPL/CPA vs target, all campaigns" />
+            <CardBody className="space-y-3">
+              {DECISION_ORDER.map((d) => (
+                <DecisionRow key={d} label={DECISION_LABELS[d]} tone={DECISION_TONES[d]} count={decisionCounts[d]} />
+              ))}
+            </CardBody>
+          </Card>
+
+          {/* Spend vs Budget */}
+          <Card>
+            <CardHeader title="Spend vs budget" description={`${budgetCampaignCount} campaigns with a budget set`} />
+            <CardBody>
+              {budgetPct == null ? (
+                <p className="text-sm text-foreground-muted">No budgeted, synced campaigns yet.</p>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between text-sm mb-2">
+                    <span className="font-semibold">{formatCurrency(budgetSpend)}</span>
+                    <span className="text-foreground-muted">of {formatCurrency(budgetAllocated)} allocated</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${budgetPct >= 100 ? "bg-danger-fg" : budgetPct >= 85 ? "bg-warning-fg" : "bg-success-fg"}`}
+                      style={{ width: `${budgetPct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-foreground-muted mt-2">
+                    Daily-budget campaigns: budget × days synced. Lifetime-budget campaigns: budget cap. No
+                    account-level budget exists to compare against (PRD §12 Q6).
+                  </p>
+                </>
+              )}
+            </CardBody>
+          </Card>
+        </div>
       </div>
 
       {/* Needs attention */}
