@@ -8,7 +8,11 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Campaign, InsightSnapshot } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+// See src/app/(app)/page.tsx for why this changed from force-dynamic. Longer
+// window here — this page pages through every insight_snapshots row and
+// recomputes anomaly detection for every campaign on each request, the
+// heaviest page in the app.
+export const revalidate = 120;
 
 export default async function AlertsPage() {
   const supabase = createServerSupabaseClient();

@@ -7,5 +7,6 @@ export async function triggerSync() {
   const result = await runSync();
   revalidatePath("/");
   revalidatePath("/campaigns");
+  revalidatePath("/alerts");
   return result;
 }

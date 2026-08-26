@@ -3,7 +3,8 @@ import { computeDecision, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/h
 import type { Campaign, InsightSnapshot } from "@/lib/types";
 import { CampaignsExplorer, type CampaignRow } from "@/components/campaigns/CampaignsExplorer";
 
-export const dynamic = "force-dynamic";
+// See src/app/(app)/page.tsx for why this changed from force-dynamic.
+export const revalidate = 30;
 
 export default async function CampaignsPage({
   searchParams,

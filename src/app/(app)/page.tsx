@@ -14,7 +14,13 @@ import { SpendChart } from "@/components/dashboard/SpendChart";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardFilters } from "@/components/dashboard/DashboardFilters";
 
-export const dynamic = "force-dynamic";
+// force-dynamic disabled ALL caching, so every click re-ran the full set of
+// Supabase queries below (each 400-900ms alone) from scratch. Data here only
+// changes when a sync runs (nightly cron, or the manual Sync button) — a
+// short cache window makes repeat navigation near-instant without showing
+// stale data for more than a few seconds. triggerSync's revalidatePath("/")
+// still forces an immediate refresh right after a manual sync.
+export const revalidate = 30;
 
 const DECISION_ORDER: Decision[] = ["scale", "continue", "optimize", "watch", "close"];
 

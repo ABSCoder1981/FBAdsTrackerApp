@@ -14,7 +14,8 @@ import { DecisionCenter } from "@/components/campaigns/DecisionCenter";
 import type { DecisionRecord } from "@/lib/decisions";
 import type { Ad, Campaign, InsightSnapshot } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+// See src/app/(app)/page.tsx for why this changed from force-dynamic.
+export const revalidate = 30;
 
 export default async function CampaignDetailPage({
   params,

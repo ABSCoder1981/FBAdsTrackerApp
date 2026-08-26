@@ -8,7 +8,10 @@ import { REASON_COPY } from "@/lib/health";
 import type { DecisionRecord } from "@/lib/decisions";
 import type { Campaign } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+// See src/app/(app)/page.tsx for why this changed from force-dynamic.
+// recordDecision() explicitly revalidates this path, so a fresh decision
+// shows up immediately regardless of this window.
+export const revalidate = 60;
 
 export default async function DecisionsPage() {
   const supabase = createServerSupabaseClient();
