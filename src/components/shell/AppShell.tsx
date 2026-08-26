@@ -14,6 +14,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { NAV_ITEMS } from "./navItems";
+import { HeaderSearch } from "./HeaderSearch";
 import { signOut } from "@/app/login/actions";
 
 export function AppShell({
@@ -85,6 +86,8 @@ export function AppShell({
             </span>
           </div>
 
+          <HeaderSearch />
+
           <div className="flex items-center gap-1">
             <button
               className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
@@ -141,12 +144,11 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="h-14 flex items-center px-4 border-b border-border shrink-0">
-        {collapsed ? (
-          <span className="font-semibold text-sm">FB</span>
-        ) : (
-          <span className="font-semibold text-sm truncate">FB Ads Tracker</span>
-        )}
+      <div className="h-14 flex items-center gap-2.5 px-4 border-b border-border shrink-0">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-primary text-primary-foreground font-bold text-sm">
+          F
+        </span>
+        {!collapsed && <span className="font-semibold text-sm truncate">FB Ads Tracker</span>}
       </div>
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {NAV_ITEMS.map((item) => {
@@ -160,11 +162,11 @@ function SidebarContent({
               title={collapsed ? item.label : undefined}
               className={`flex items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-sm transition-colors ${
                 isActive
-                  ? "bg-surface-muted text-foreground font-medium"
+                  ? "bg-tile-blue-bg text-primary font-medium"
                   : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"
               }`}
             >
-              <Icon size={17} strokeWidth={1.75} className="shrink-0" />
+              <Icon size={17} strokeWidth={2} className="shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );

@@ -5,7 +5,12 @@ import { CampaignsExplorer, type CampaignRow } from "@/components/campaigns/Camp
 
 export const dynamic = "force-dynamic";
 
-export default async function CampaignsPage() {
+export default async function CampaignsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
   const supabase = createServerSupabaseClient();
 
   const [{ data: campaigns, error }, { data: snapshots }] = await Promise.all([
@@ -75,7 +80,7 @@ export default async function CampaignsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
         <p className="text-sm text-foreground-muted mt-1">{rows.length} campaigns</p>
       </div>
-      <CampaignsExplorer rows={rows} />
+      <CampaignsExplorer rows={rows} initialQuery={q ?? ""} />
     </main>
   );
 }

@@ -5,7 +5,7 @@ type Size = "sm" | "md";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary:
-    "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50",
+    "bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm disabled:opacity-50",
   secondary:
     "bg-surface text-foreground border border-border hover:bg-surface-muted disabled:opacity-50",
   tertiary: "text-foreground-muted hover:text-foreground disabled:opacity-50",

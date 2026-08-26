@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Wallet, Eye, MousePointerClick, Target, Megaphone } from "lucide-react";
+import { Wallet, Eye, MousePointerClick, Target, Megaphone, Percent, Coins } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeDecision, REASON_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
 import type { Campaign, Decision, InsightSnapshot } from "@/lib/types";
@@ -8,6 +8,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Card, CardHeader, CardBody, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DecisionBadge } from "@/components/DecisionBadge";
+import { DecisionSummaryCard } from "@/components/DecisionSummaryCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SpendChart } from "@/components/dashboard/SpendChart";
 import { SyncButton } from "@/components/dashboard/SyncButton";
@@ -16,20 +17,47 @@ import { DashboardFilters } from "@/components/dashboard/DashboardFilters";
 export const dynamic = "force-dynamic";
 
 const DECISION_ORDER: Decision[] = ["scale", "continue", "optimize", "watch", "close"];
-const DECISION_LABELS: Record<Decision, string> = {
-  scale: "Scale",
-  continue: "Continue",
-  optimize: "Optimize",
-  watch: "Watch",
-  close: "Close",
-};
-const DECISION_TONES: Record<Decision, "success" | "warning" | "danger" | "neutral"> = {
-  scale: "success",
-  continue: "success",
-  optimize: "warning",
-  watch: "neutral",
-  close: "danger",
-};
+
+type SnapshotRow = Pick<
+  InsightSnapshot,
+  "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results"
+>;
+
+function aggregate(snapshots: SnapshotRow[] | null) {
+  const totalsByCampaign = new Map<string, { spend: number; results: number; dates: Set<string> }>();
+  const totalsByDate = new Map<string, { spend: number; impressions: number; clicks: number; results: number }>();
+  let totalSpend = 0;
+  let totalImpressions = 0;
+  let totalClicks = 0;
+  let totalResults = 0;
+
+  for (const s of snapshots ?? []) {
+    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0, dates: new Set<string>() };
+    cur.spend += s.spend;
+    cur.results += s.results;
+    cur.dates.add(s.date);
+    totalsByCampaign.set(s.campaign_id, cur);
+
+    const day = totalsByDate.get(s.date) ?? { spend: 0, impressions: 0, clicks: 0, results: 0 };
+    day.spend += s.spend;
+    day.impressions += s.impressions;
+    day.clicks += s.clicks;
+    day.results += s.results;
+    totalsByDate.set(s.date, day);
+
+    totalSpend += s.spend;
+    totalImpressions += s.impressions;
+    totalClicks += s.clicks;
+    totalResults += s.results;
+  }
+
+  return { totalsByCampaign, totalsByDate, totalSpend, totalImpressions, totalClicks, totalResults };
+}
+
+function pctChange(current: number, previous: number): number | undefined {
+  if (previous === 0) return undefined;
+  return ((current - previous) / previous) * 100;
+}
 
 export default async function OverviewPage({
   searchParams,
@@ -65,54 +93,68 @@ export default async function OverviewPage({
     allCampaignsQuery = allCampaignsQuery.eq("objective", objective);
   }
 
-  let snapshotsQuery = supabase
-    .from("insight_snapshots")
-    .select("campaign_id, date, spend, impressions, clicks, results")
-    .eq("level", "campaign");
+  const snapshotsSelect = "campaign_id, date, spend, impressions, clicks, results";
+  let snapshotsQuery = supabase.from("insight_snapshots").select(snapshotsSelect).eq("level", "campaign");
+
+  // Previous-period comparison needs a second, equal-length window
+  // immediately before the current one — only meaningful when a concrete
+  // range is selected (there's no "previous" for "all time").
+  let previousSnapshotsPromise: PromiseLike<{ data: SnapshotRow[] | null }> = Promise.resolve({ data: null });
 
   if (days !== "all") {
+    const n = Number(days);
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - Number(days));
-    snapshotsQuery = snapshotsQuery.gte("date", cutoff.toISOString().slice(0, 10));
+    cutoff.setDate(cutoff.getDate() - n);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    snapshotsQuery = snapshotsQuery.gte("date", cutoffStr);
+
+    // objective lives on campaigns, not insight_snapshots — filtering the
+    // previous-period comparison by it would need a join, so skip the
+    // comparison entirely when an objective filter is active rather than
+    // silently ignoring the filter and showing a misleading number.
+    if (!objective) {
+      const prevCutoff = new Date();
+      prevCutoff.setDate(prevCutoff.getDate() - n * 2);
+      const prevCutoffStr = prevCutoff.toISOString().slice(0, 10);
+
+      previousSnapshotsPromise = supabase
+        .from("insight_snapshots")
+        .select(snapshotsSelect)
+        .eq("level", "campaign")
+        .gte("date", prevCutoffStr)
+        .lt("date", cutoffStr)
+        .returns<SnapshotRow[]>();
+    }
   }
 
-  const [{ count: activeCount }, { count: totalCount }, { data: campaigns }, { data: snapshots }] =
-    await Promise.all([
-      activeQuery,
-      campaignsQuery,
-      allCampaignsQuery.returns<Campaign[]>(),
-      snapshotsQuery.returns<
-        Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results">[]
-      >(),
-    ]);
+  const [
+    { count: activeCount },
+    { count: totalCount },
+    { data: campaigns },
+    { data: snapshots },
+    { data: previousSnapshots },
+    { data: lastSync },
+  ] = await Promise.all([
+    activeQuery,
+    campaignsQuery,
+    allCampaignsQuery.returns<Campaign[]>(),
+    snapshotsQuery.returns<SnapshotRow[]>(),
+    previousSnapshotsPromise,
+    supabase.from("insight_snapshots").select("created_at").order("created_at", { ascending: false }).limit(1),
+  ]);
 
-  const totalsByCampaign = new Map<string, { spend: number; results: number; dates: Set<string> }>();
-  const totalsByDate = new Map<string, { spend: number; impressions: number; clicks: number; results: number }>();
+  const { totalsByCampaign, totalsByDate, totalSpend, totalImpressions, totalClicks, totalResults } =
+    aggregate(snapshots);
+  const prev = aggregate(previousSnapshots);
 
-  let totalSpend = 0;
-  let totalImpressions = 0;
-  let totalClicks = 0;
-  let totalResults = 0;
+  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
+  const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
+  const avgCostPerResult = totalResults > 0 ? totalSpend / totalResults : null;
+  const prevCtr = prev.totalImpressions > 0 ? (prev.totalClicks / prev.totalImpressions) * 100 : null;
+  const prevCpc = prev.totalClicks > 0 ? prev.totalSpend / prev.totalClicks : null;
+  const prevAvgCostPerResult = prev.totalResults > 0 ? prev.totalSpend / prev.totalResults : null;
 
-  for (const s of snapshots ?? []) {
-    const cur = totalsByCampaign.get(s.campaign_id) ?? { spend: 0, results: 0, dates: new Set<string>() };
-    cur.spend += s.spend;
-    cur.results += s.results;
-    cur.dates.add(s.date);
-    totalsByCampaign.set(s.campaign_id, cur);
-
-    const day = totalsByDate.get(s.date) ?? { spend: 0, impressions: 0, clicks: 0, results: 0 };
-    day.spend += s.spend;
-    day.impressions += s.impressions;
-    day.clicks += s.clicks;
-    day.results += s.results;
-    totalsByDate.set(s.date, day);
-
-    totalSpend += s.spend;
-    totalImpressions += s.impressions;
-    totalClicks += s.clicks;
-    totalResults += s.results;
-  }
+  const hasComparison = days !== "all" && !objective && (previousSnapshots?.length ?? 0) > 0;
 
   const decisionCounts: Record<Decision, number> = { scale: 0, continue: 0, optimize: 0, watch: 0, close: 0 };
   const evaluated: {
@@ -172,33 +214,43 @@ export default async function OverviewPage({
     })
     .slice(0, 8);
 
-  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
-  const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
-  const avgCostPerResult = totalResults > 0 ? totalSpend / totalResults : null;
-
   const rangeNote = days === "all" ? "all-time synced" : `last ${days} days, synced`;
 
   const chartData = [...totalsByDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({ date, ...v }));
 
+  const spendSparkline = chartData.map((d) => d.spend);
+  const resultsSparkline = chartData.map((d) => d.results);
+  const impressionsSparkline = chartData.map((d) => d.impressions);
+  const clicksSparkline = chartData.map((d) => d.clicks);
+
+  const lastSyncedAt = lastSync?.[0]?.created_at ? new Date(lastSync[0].created_at) : null;
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
       {/* Hero */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Good day, Abbas</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{greeting}, Abbas 👋</h1>
           <p className="text-sm text-foreground-muted mt-1">
-            Track campaign performance, spend and lead generation across all connected ad accounts.
+            Here&apos;s what&apos;s happening with your ad campaigns.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link href="/campaigns">
-            <Button variant="secondary" size="sm">
-              Export
-            </Button>
-          </Link>
-          <SyncButton />
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <div className="flex items-center gap-2">
+            <Link href="/campaigns">
+              <Button variant="secondary" size="sm">
+                Export
+              </Button>
+            </Link>
+            <SyncButton />
+          </div>
+          {lastSyncedAt && <RelativeSyncTime label={relativeSyncLabel(lastSyncedAt, now)} />}
         </div>
       </div>
 
@@ -208,35 +260,88 @@ export default async function OverviewPage({
 
       {/* KPI grid — Revenue/Profit/ROAS/Sales omitted, no revenue source exists (PRD §12 Q10) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total spend (synced)" value={formatCurrency(totalSpend)} icon={Wallet} emphasis note={rangeNote} />
-        <KpiCard label="Impressions" value={formatCompact(totalImpressions)} icon={Eye} note={rangeNote} />
-        <KpiCard label="Clicks" value={formatCompact(totalClicks)} icon={MousePointerClick} note={rangeNote} />
-        <KpiCard label="Results (leads)" value={formatCompact(totalResults)} icon={Target} note={rangeNote} />
-        <KpiCard label="CTR" value={ctr != null ? `${ctr.toFixed(2)}%` : "—"} />
-        <KpiCard label="Avg. cost / result" value={avgCostPerResult != null ? formatCurrency(avgCostPerResult) : "—"} />
-        <KpiCard label="Active campaigns" value={String(activeCount ?? 0)} icon={Megaphone} note={`of ${totalCount ?? 0} total`} />
-        <KpiCard label="Avg. CPC" value={cpc != null ? formatCurrency(cpc) : "—"} />
+        <KpiCard
+          label="Total spend"
+          value={formatCurrency(totalSpend)}
+          icon={Wallet}
+          tone="blue"
+          emphasis
+          note={hasComparison ? undefined : rangeNote}
+          changePct={hasComparison ? pctChange(totalSpend, prev.totalSpend) : undefined}
+          sparkline={spendSparkline}
+        />
+        <KpiCard
+          label="Impressions"
+          value={formatCompact(totalImpressions)}
+          icon={Eye}
+          tone="purple"
+          note={hasComparison ? undefined : rangeNote}
+          changePct={hasComparison ? pctChange(totalImpressions, prev.totalImpressions) : undefined}
+          sparkline={impressionsSparkline}
+        />
+        <KpiCard
+          label="Clicks"
+          value={formatCompact(totalClicks)}
+          icon={MousePointerClick}
+          tone="orange"
+          note={hasComparison ? undefined : rangeNote}
+          changePct={hasComparison ? pctChange(totalClicks, prev.totalClicks) : undefined}
+          sparkline={clicksSparkline}
+        />
+        <KpiCard
+          label="Results (leads)"
+          value={formatCompact(totalResults)}
+          icon={Target}
+          tone="green"
+          note={hasComparison ? undefined : rangeNote}
+          changePct={hasComparison ? pctChange(totalResults, prev.totalResults) : undefined}
+          sparkline={resultsSparkline}
+        />
+        <KpiCard
+          label="CTR"
+          value={ctr != null ? `${ctr.toFixed(2)}%` : "—"}
+          icon={Percent}
+          tone="blue"
+          changePct={hasComparison && ctr != null && prevCtr != null ? pctChange(ctr, prevCtr) : undefined}
+        />
+        <KpiCard
+          label="Avg. cost / result"
+          value={avgCostPerResult != null ? formatCurrency(avgCostPerResult) : "—"}
+          icon={Coins}
+          tone="purple"
+          changePct={
+            hasComparison && avgCostPerResult != null && prevAvgCostPerResult != null
+              ? pctChange(avgCostPerResult, prevAvgCostPerResult)
+              : undefined
+          }
+        />
+        <KpiCard
+          label="Active campaigns"
+          value={String(activeCount ?? 0)}
+          icon={Megaphone}
+          tone="orange"
+          note={`of ${totalCount ?? 0} total`}
+        />
+        <KpiCard
+          label="Avg. CPC"
+          value={cpc != null ? formatCurrency(cpc) : "—"}
+          icon={Wallet}
+          tone="green"
+          changePct={hasComparison && cpc != null && prevCpc != null ? pctChange(cpc, prevCpc) : undefined}
+        />
       </div>
 
       {/* Decision summary strip — docs/CAMPAIGN_INTELLIGENCE_SPEC.md §3 */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {DECISION_ORDER.map((d) => (
-          <DecisionSummaryCard
-            key={d}
-            label={DECISION_LABELS[d]}
-            tone={DECISION_TONES[d]}
-            count={decisionCounts[d]}
-          />
+          <DecisionSummaryCard key={d} decision={d} count={decisionCounts[d]} />
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Chart */}
         <Card className="lg:col-span-2">
-          <CardHeader
-            title="Campaign performance"
-            description="Spend vs results, synced days only"
-          />
+          <CardHeader title="Campaign performance" description="Spend vs results, synced days only" />
           <CardBody>
             <SpendChart data={chartData} />
           </CardBody>
@@ -248,16 +353,6 @@ export default async function OverviewPage({
         </Card>
 
         <div className="space-y-4">
-          {/* Decision summary (list form) */}
-          <Card>
-            <CardHeader title="Decision summary" description="CPL/CPA vs target, all campaigns" />
-            <CardBody className="space-y-3">
-              {DECISION_ORDER.map((d) => (
-                <DecisionRow key={d} label={DECISION_LABELS[d]} tone={DECISION_TONES[d]} count={decisionCounts[d]} />
-              ))}
-            </CardBody>
-          </Card>
-
           {/* Spend vs Budget */}
           <Card>
             <CardHeader title="Spend vs budget" description={`${budgetCampaignCount} campaigns with a budget set`} />
@@ -290,10 +385,10 @@ export default async function OverviewPage({
       {/* Needs attention */}
       <Card>
         <CardHeader
-          title="Needs a decision"
+          title="Campaigns needing attention"
           description="Optimize or Close campaigns, worst cost overrun first"
           action={
-            <Link href="/campaigns" className="text-xs font-medium text-foreground hover:underline">
+            <Link href="/campaigns" className="text-xs font-medium text-primary hover:underline">
               View all campaigns →
             </Link>
           }
@@ -347,53 +442,17 @@ export default async function OverviewPage({
   );
 }
 
-function DecisionSummaryCard({
-  label,
-  tone,
-  count,
-}: {
-  label: string;
-  tone: "success" | "warning" | "danger" | "neutral";
-  count: number;
-}) {
-  const dotClass = {
-    success: "bg-success-fg",
-    warning: "bg-warning-fg",
-    danger: "bg-danger-fg",
-    neutral: "bg-foreground-muted",
-  }[tone];
-  return (
-    <div className="border border-border rounded-[var(--radius-lg)] bg-surface p-4">
-      <span className={`h-2 w-2 rounded-full inline-block ${dotClass}`} />
-      <div className="text-2xl font-semibold tracking-tight mt-1.5">{count}</div>
-      <div className="text-xs text-foreground-muted">{label}</div>
-    </div>
-  );
+function relativeSyncLabel(date: Date, now: Date): string {
+  const minutes = Math.max(0, Math.round((now.getTime() - date.getTime()) / 60000));
+  return minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} hr ago`;
 }
 
-function DecisionRow({
-  label,
-  tone,
-  count,
-}: {
-  label: string;
-  tone: "success" | "warning" | "danger" | "neutral";
-  count: number;
-}) {
-  const dotClass = {
-    success: "bg-success-fg",
-    warning: "bg-warning-fg",
-    danger: "bg-danger-fg",
-    neutral: "bg-foreground-muted",
-  }[tone];
+function RelativeSyncTime({ label }: { label: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="flex items-center gap-2 text-sm text-foreground">
-        <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-        {label}
-      </span>
-      <span className="text-sm font-semibold">{count}</span>
-    </div>
+    <span className="inline-flex items-center gap-1 text-xs text-foreground-muted">
+      <span className="h-1.5 w-1.5 rounded-full bg-success-fg" />
+      Synced {label}
+    </span>
   );
 }
 

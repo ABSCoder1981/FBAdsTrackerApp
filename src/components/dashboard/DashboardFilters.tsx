@@ -4,11 +4,10 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Building2 } from "lucide-react";
 
 const DATE_RANGES = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
-  { value: "all", label: "All time" },
+  { value: "7", label: "7D" },
+  { value: "30", label: "30D" },
+  { value: "90", label: "90D" },
+  { value: "all", label: "All" },
 ];
 
 const OBJECTIVES = ["leads", "traffic", "engagement", "awareness", "custom", "sales"];
@@ -33,18 +32,21 @@ export function DashboardFilters() {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <select
-        value={days}
-        onChange={(e) => setParam("days", e.target.value)}
-        className="h-9 px-3 rounded-[var(--radius-sm)] border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        aria-label="Date range"
-      >
+      <div className="inline-flex items-center rounded-[var(--radius-sm)] border border-border bg-surface p-0.5">
         {DATE_RANGES.map((r) => (
-          <option key={r.value} value={r.value}>
+          <button
+            key={r.value}
+            onClick={() => setParam("days", r.value)}
+            className={`h-8 px-3 rounded-[calc(var(--radius-sm)-2px)] text-sm font-medium transition-colors ${
+              days === r.value
+                ? "bg-primary text-primary-foreground"
+                : "text-foreground-muted hover:text-foreground"
+            }`}
+          >
             {r.label}
-          </option>
+          </button>
         ))}
-      </select>
+      </div>
 
       <select
         value={objective}

@@ -28,8 +28,8 @@ export interface CampaignRow {
 const DECISION_FILTERS: Decision[] = ["scale", "continue", "optimize", "watch", "close"];
 const PAGE_SIZE = 25;
 
-export function CampaignsExplorer({ rows }: { rows: CampaignRow[] }) {
-  const [query, setQuery] = useState("");
+export function CampaignsExplorer({ rows, initialQuery = "" }: { rows: CampaignRow[]; initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [decisionFilter, setDecisionFilter] = useState<Decision | null>(null);
   const [page, setPage] = useState(1);

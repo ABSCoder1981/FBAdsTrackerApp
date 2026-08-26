@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Wallet, Target, Coins, Calendar } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeDecision, REASON_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
 import { DecisionBadge } from "@/components/DecisionBadge";
@@ -138,12 +138,14 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Spend" value={`${campaign.budget_currency ?? ""} ${totalSpend.toFixed(2)}`} />
-        <KpiCard label="Results" value={String(totalResults)} />
-        <KpiCard label="Cost/result" value={costPerResult != null ? costPerResult.toFixed(2) : "—"} />
+        <KpiCard label="Spend" value={`${campaign.budget_currency ?? ""} ${totalSpend.toFixed(2)}`} icon={Wallet} tone="blue" />
+        <KpiCard label="Results" value={String(totalResults)} icon={Target} tone="green" />
+        <KpiCard label="Cost/result" value={costPerResult != null ? costPerResult.toFixed(2) : "—"} icon={Coins} tone="purple" />
         <KpiCard
           label="Budget"
           value={campaign.budget_amount != null ? `${campaign.budget_currency ?? ""} ${campaign.budget_amount}` : "—"}
+          icon={Calendar}
+          tone="orange"
           note={campaign.budget_type ?? undefined}
         />
       </div>
