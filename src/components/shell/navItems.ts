@@ -5,6 +5,7 @@ import {
   Wallet,
   FileText,
   ClipboardCheck,
+  BellRing,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone },
+  { label: "Alerts", href: "/alerts", icon: BellRing },
   { label: "Decisions", href: "/decisions", icon: ClipboardCheck },
   { label: "Analytics", href: "/analytics", icon: ChartNoAxesCombined },
   { label: "Spend", href: "/spend", icon: Wallet },
