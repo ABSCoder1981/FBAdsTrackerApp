@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Wallet, Eye, MousePointerClick, Target, Megaphone } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeDecision, REASON_COPY, DEFAULT_TARGET_CPA, DEFAULT_TARGET_CPL } from "@/lib/health";
@@ -10,6 +11,7 @@ import { DecisionBadge } from "@/components/DecisionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SpendChart } from "@/components/dashboard/SpendChart";
 import { SyncButton } from "@/components/dashboard/SyncButton";
+import { DashboardFilters } from "@/components/dashboard/DashboardFilters";
 
 export const dynamic = "force-dynamic";
 
@@ -29,34 +31,57 @@ const DECISION_TONES: Record<Decision, "success" | "warning" | "danger" | "neutr
   close: "danger",
 };
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string; objective?: string }>;
+}) {
+  const { days: daysParam, objective } = await searchParams;
+  const days = daysParam ?? "30";
+
   const supabase = createServerSupabaseClient();
+
+  let campaignsQuery = supabase
+    .from("campaigns")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+  let activeQuery = supabase
+    .from("campaigns")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null)
+    .eq("is_enabled", true);
+  let allCampaignsQuery = supabase
+    .from("campaigns")
+    .select("id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at")
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(500);
+
+  if (objective) {
+    campaignsQuery = campaignsQuery.eq("objective", objective);
+    activeQuery = activeQuery.eq("objective", objective);
+    allCampaignsQuery = allCampaignsQuery.eq("objective", objective);
+  }
+
+  let snapshotsQuery = supabase
+    .from("insight_snapshots")
+    .select("campaign_id, date, spend, impressions, clicks, results")
+    .eq("level", "campaign");
+
+  if (days !== "all") {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - Number(days));
+    snapshotsQuery = snapshotsQuery.gte("date", cutoff.toISOString().slice(0, 10));
+  }
 
   const [{ count: activeCount }, { count: totalCount }, { data: campaigns }, { data: snapshots }] =
     await Promise.all([
-      supabase
-        .from("campaigns")
-        .select("id", { count: "exact", head: true })
-        .is("deleted_at", null)
-        .eq("is_enabled", true),
-      supabase
-        .from("campaigns")
-        .select("id", { count: "exact", head: true })
-        .is("deleted_at", null),
-      supabase
-        .from("campaigns")
-        .select(
-          "id, name, objective, is_enabled, delivery_status, target_cpl, target_cpa, updated_at",
-        )
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(500)
-        .returns<Campaign[]>(),
-      supabase
-        .from("insight_snapshots")
-        .select("campaign_id, date, spend, impressions, clicks, results")
-        .eq("level", "campaign")
-        .returns<Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results">[]>(),
+      activeQuery,
+      campaignsQuery,
+      allCampaignsQuery.returns<Campaign[]>(),
+      snapshotsQuery.returns<
+        Pick<InsightSnapshot, "campaign_id" | "date" | "spend" | "impressions" | "clicks" | "results">[]
+      >(),
     ]);
 
   const totalsByCampaign = new Map<string, { spend: number; results: number; dates: Set<string> }>();
@@ -127,6 +152,8 @@ export default async function OverviewPage() {
   const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
   const avgCostPerResult = totalResults > 0 ? totalSpend / totalResults : null;
 
+  const rangeNote = days === "all" ? "all-time synced" : `last ${days} days, synced`;
+
   const chartData = [...totalsByDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({ date, ...v }));
@@ -151,12 +178,16 @@ export default async function OverviewPage() {
         </div>
       </div>
 
+      <Suspense fallback={<div className="h-9" />}>
+        <DashboardFilters />
+      </Suspense>
+
       {/* KPI grid — Revenue/Profit/ROAS/Sales omitted, no revenue source exists (PRD §12 Q10) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total spend (synced)" value={formatCurrency(totalSpend)} icon={Wallet} emphasis note="all-time synced" />
-        <KpiCard label="Impressions" value={formatCompact(totalImpressions)} icon={Eye} note="all-time synced" />
-        <KpiCard label="Clicks" value={formatCompact(totalClicks)} icon={MousePointerClick} note="all-time synced" />
-        <KpiCard label="Results (leads)" value={formatCompact(totalResults)} icon={Target} note="all-time synced" />
+        <KpiCard label="Total spend (synced)" value={formatCurrency(totalSpend)} icon={Wallet} emphasis note={rangeNote} />
+        <KpiCard label="Impressions" value={formatCompact(totalImpressions)} icon={Eye} note={rangeNote} />
+        <KpiCard label="Clicks" value={formatCompact(totalClicks)} icon={MousePointerClick} note={rangeNote} />
+        <KpiCard label="Results (leads)" value={formatCompact(totalResults)} icon={Target} note={rangeNote} />
         <KpiCard label="CTR" value={ctr != null ? `${ctr.toFixed(2)}%` : "—"} />
         <KpiCard label="Avg. cost / result" value={avgCostPerResult != null ? formatCurrency(avgCostPerResult) : "—"} />
         <KpiCard label="Active campaigns" value={String(activeCount ?? 0)} icon={Megaphone} note={`of ${totalCount ?? 0} total`} />

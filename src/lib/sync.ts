@@ -27,6 +27,18 @@ interface FbInsightRow {
   ad_name?: string;
 }
 
+interface InsightSnapshotRow {
+  campaign_id: string;
+  date: string;
+  level: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  results: number;
+  cost_per_result: number | null;
+  breakdown_dimension: string;
+}
+
 function extractResults(objective: string | null, actions: FbAction[] | undefined): number {
   if (!actions) return 0;
   if (objective === "leads") {
@@ -106,64 +118,68 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
 
   const byExternalId = new Map(campaigns?.map((c) => [c.external_id, c]));
 
-  // Upsert ad metadata (name) before inserting snapshots that reference it.
-  for (const row of adRows) {
-    const campaign = byExternalId.get(row.campaign_id);
-    if (!campaign || !row.ad_id) continue;
+  // Batch ad metadata into one upsert (was one round-trip per ad — with 24+
+  // ads plus 100+ insight_snapshots rows, the old sequential-loop version
+  // took 14s+ locally and was timing out on Netlify's serverless function
+  // execution limit in production).
+  const adMetadataRows = adRows
+    .map((row) => {
+      const campaign = byExternalId.get(row.campaign_id);
+      if (!campaign || !row.ad_id) return null;
+      return { external_id: row.ad_id, campaign_id: campaign.id, name: row.ad_name ?? row.ad_id };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  if (adMetadataRows.length > 0) {
     const { error: adUpsertErr } = await supabase
       .from("ads")
-      .upsert(
-        { external_id: row.ad_id, campaign_id: campaign.id, name: row.ad_name ?? row.ad_id },
-        { onConflict: "external_id" },
-      );
+      .upsert(adMetadataRows, { onConflict: "external_id" });
     if (adUpsertErr) throw adUpsertErr;
   }
 
-  let upserted = 0;
   let skipped = 0;
 
-  async function upsertRow(row: FbInsightRow, level: string, breakdownDimension: string) {
+  function buildRow(row: FbInsightRow, level: string, breakdownDimension: string): InsightSnapshotRow | null {
     const campaign = byExternalId.get(row.campaign_id);
     if (!campaign) {
       skipped++;
-      return;
+      return null;
     }
 
     const spend = Number(row.spend || 0);
     const results = extractResults(campaign.objective, row.actions);
     const costPerResult = results > 0 ? spend / results : null;
 
-    const { error: upsertErr } = await supabase.from("insight_snapshots").upsert(
-      {
-        campaign_id: campaign.id,
-        date: row.date_start,
-        level,
-        spend,
-        impressions: Number(row.impressions || 0),
-        clicks: Number(row.clicks || 0),
-        results,
-        cost_per_result: costPerResult,
-        // "" not null — Postgres treats NULL <> NULL, which broke the unique
-        // constraint's ON CONFLICT matching (migration 0004).
-        breakdown_dimension: breakdownDimension,
-      },
-      { onConflict: "campaign_id,date,level,breakdown_dimension" },
-    );
+    return {
+      campaign_id: campaign.id,
+      date: row.date_start,
+      level,
+      spend,
+      impressions: Number(row.impressions || 0),
+      clicks: Number(row.clicks || 0),
+      results,
+      cost_per_result: costPerResult,
+      // "" not null — Postgres treats NULL <> NULL, which broke the unique
+      // constraint's ON CONFLICT matching (migration 0004).
+      breakdown_dimension: breakdownDimension,
+    };
+  }
 
+  const snapshotRows: InsightSnapshotRow[] = [
+    ...campaignRows.map((row) => buildRow(row, "campaign", "")),
+    ...placementRows.map((row) =>
+      buildRow(row, "placement", `${row.publisher_platform ?? "unknown"}/${row.platform_position ?? "unknown"}`),
+    ),
+    ...adRows.filter((row) => row.ad_id).map((row) => buildRow(row, "ad", row.ad_id!)),
+  ].filter((r): r is InsightSnapshotRow => r !== null);
+
+  let upserted = 0;
+  if (snapshotRows.length > 0) {
+    const { error: upsertErr } = await supabase
+      .from("insight_snapshots")
+      .upsert(snapshotRows, { onConflict: "campaign_id,date,level,breakdown_dimension" });
     if (upsertErr) throw upsertErr;
-    upserted++;
-  }
-
-  for (const row of campaignRows) {
-    await upsertRow(row, "campaign", "");
-  }
-  for (const row of placementRows) {
-    const dimension = `${row.publisher_platform ?? "unknown"}/${row.platform_position ?? "unknown"}`;
-    await upsertRow(row, "placement", dimension);
-  }
-  for (const row of adRows) {
-    if (!row.ad_id) continue;
-    await upsertRow(row, "ad", row.ad_id);
+    upserted = snapshotRows.length;
   }
 
   return {

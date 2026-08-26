@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -10,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { LineChart } from "lucide-react";
 
 interface Point {
@@ -19,6 +21,19 @@ interface Point {
 }
 
 export function SpendChart({ data }: { data: Point[] }) {
+  // ResponsiveContainer measures its parent on mount; during SSR/hydration
+  // the parent can still be 0×0 (e.g. before web fonts load and reflow the
+  // page), and Recharts doesn't re-measure without a resize event — so the
+  // chart silently rendered blank until something (a manual browser refresh,
+  // or the layout-shifting "Synced N/N" text after a sync) triggered one.
+  // Mounting only after the browser has already committed a layout pass
+  // avoids the bad first measurement entirely.
+  const [mounted, setMounted] = useState(false);
+  // Deliberate client-only-mount flag, not state synchronized from an
+  // external system — the lint rule's general case doesn't apply here.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setMounted(true), []);
+
   if (data.length === 0) {
     return (
       <EmptyState
@@ -27,6 +42,10 @@ export function SpendChart({ data }: { data: Point[] }) {
         description="Run a sync to populate spend and results trends."
       />
     );
+  }
+
+  if (!mounted) {
+    return <Skeleton className="h-64 w-full" />;
   }
 
   return (
