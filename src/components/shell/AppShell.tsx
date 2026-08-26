@@ -11,10 +11,18 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  LogOut,
 } from "lucide-react";
 import { NAV_ITEMS } from "./navItems";
+import { signOut } from "@/app/login/actions";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  userEmail,
+}: {
+  children: React.ReactNode;
+  userEmail: string | null;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -97,9 +105,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Settings size={17} strokeWidth={1.75} />
             </Link>
-            <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center ml-1">
-              A
+            <div
+              className="h-8 w-8 rounded-full bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center ml-1"
+              title={userEmail ?? undefined}
+            >
+              {userEmail ? userEmail[0].toUpperCase() : "?"}
             </div>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="h-9 w-9 flex items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut size={17} strokeWidth={1.75} />
+              </button>
+            </form>
           </div>
         </header>
 

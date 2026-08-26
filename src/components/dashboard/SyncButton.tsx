@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { triggerSync } from "@/app/actions";
+import { triggerSync } from "@/app/(app)/actions";
 
 export function SyncButton() {
   const [isPending, startTransition] = useTransition();

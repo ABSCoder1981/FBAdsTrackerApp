@@ -314,7 +314,8 @@ Report (type, recipients, schedule, last_sent_at)
 7. **Closed 2026-08-25 (permanent, not just reopened).** Should `agent_name` be formalized into `agent_id → User`? Initially resolved "yes" and built in Phase 0, reverted the same day once real data showed `agent_name` frequently holds a property/project name, not a salesperson. **Decision: agent identity is permanently out of scope for this product's direction** (per the 2026-08-25 Campaign Intelligence pivot, `docs/CAMPAIGN_INTELLIGENCE_SPEC.md`) — not "revisit later," just not part of the design. No further agent-identity work should be proposed unless the user explicitly reopens it.
 8. **Closed 2026-08-25 (permanent).** ~~Is there a canonical Client/property table?~~ The `clients` table's 86 rows turned out to be mostly agent names/localities, not builders. **Decision: Client is permanently out of scope**, same as Q7 — not a data-quality problem to eventually fix, a scope decision. `docs/CAMPAIGN_INTELLIGENCE_SPEC.md` is explicitly campaign-centric only.
 9. **Closed 2026-08-25 (permanent), superseded by Q7/Q8's closure.** Client display was removed from Campaigns list, Campaign Detail, and nav on 2026-08-25 and stays removed as a design decision, not a temporary gap.
-10. **New 2026-08-25.** Financial Analysis (`docs/CAMPAIGN_INTELLIGENCE_SPEC.md` §6F) needs a revenue source, and none exists. This is a **business decision**, not an engineering one: does the agency want to connect a CRM or sales-tracking system at all? Until answered, Revenue/Profit/ROAS/CAC/Sales stay out of every screen (Dashboard, Campaign List, Campaign Detail) rather than showing zeros or placeholders.
+10. **Answered 2026-08-26, still open.** Financial Analysis (`docs/CAMPAIGN_INTELLIGENCE_SPEC.md` §6F) needs a revenue source, and none exists. Asked directly: does the agency want to connect a CRM or sales-tracking system? **Answer: undecided — "may do in future."** Not scheduled in any phase; revisit if/when the agency decides. Until then, Revenue/Profit/ROAS/CAC/Sales stay out of every screen (Dashboard, Campaign List, Campaign Detail) rather than showing zeros or placeholders.
+11. **Answered 2026-08-26, resolved.** Should real user accounts/login exist, ahead of Decision Center needing to know "who" made a decision? **Answer: yes.** Shipped 2026-08-26 — Supabase Auth, email+password, admin-created accounts only. See §13.3 Phase 3.
 
 ---
 
@@ -336,7 +337,7 @@ The single most important constraint on this direction: most of the target spec 
 | CPL vs. target, 4-state health (→ becomes 5-state Decision, §13.4) | Geography breakdown |
 | — | **Revenue, Profit, ROAS, CAC, Sales, Qualified Leads — no CRM connected (§12 Q10)** |
 | — | Forecasting/prediction (no model, insufficient history) |
-| — | Decision persistence/audit trail (no `decisions` table, no real auth) |
+| Real auth (Supabase Auth, email+password, admin-created accounts) | Decision persistence/audit trail — auth is real now, but no `decisions` table exists yet |
 
 Consequence: Levels 1–3 of the spec (Executive Dashboard, Campaign List, Campaign Detail) ship in **reduced form** — real CPL/spend/results data, decision labels, no revenue/profit/ROAS anywhere. Levels 4–6 (Analysis Modules, Deep Analysis, Decision Center) are documented but not built.
 
@@ -350,15 +351,15 @@ Supersedes §11. Phases are ordered by data dependency, not feature area:
 - Data Confidence gating (days-synced + min-spend) — real today, ship it
 - Mini funnel (Impressions → Clicks → Leads) on Campaign Detail — the one funnel slice that's fully real today
 
-**Phase 2 (needs: more sync history + new Meta API calls, no new external systems)**
-- Ad set/ad-level Meta Insights sync → unblocks Creative, Audience, Placement, Geography modules (spec §6B–6E)
-- Anomaly detection, once ≥14 consecutive synced days exist per campaign (spec §9)
-- Alerting engine + scheduled reports (from original §11 Phase 2, unaffected by this pivot)
+**Phase 2 — done 2026-08-25/26**
+- ~~Ad set/ad-level Meta Insights sync~~ **Shipped in reduced form:** Placement (§6D) and Creative (§6B) — both tested live before building, real differentiation confirmed. Audience (§6C) and Geography (§6E) tested and **not built** — every campaign has exactly 1 ad set and 1 region, nothing to compare.
+- Anomaly detection — **still not started**, needs ≥14 consecutive synced days per campaign, which is a calendar-time constraint, not an engineering one
+- Alerting engine + scheduled reports — **still not started**
 
-**Phase 3 (needs: new external systems + real auth)**
-- CRM/revenue integration — **business decision required first** (§12 Q10), not just engineering
-- Real authentication/`users` (current `users` table is empty since the agent-formalization revert) → unblocks Decision Center + Decision History (spec §10)
-- Full Financial Analysis module (spec §6F), Health Score's profitability/ROAS/lead-quality factors (spec §7)
+**Phase 3 (needs: new external systems) — auth done 2026-08-26, CRM undecided**
+- ~~Real authentication~~ **Shipped 2026-08-26:** Supabase Auth, email+password, admin-created accounts only (no public sign-up), full-app route protection via middleware. Decision Center/History (spec §10) still needs the `decisions` table itself, which doesn't exist yet — auth was the blocker, not the only piece.
+- CRM/revenue integration — **business decision required first** (§12 Q10): agency doesn't know yet, may revisit in the future. Not scheduled.
+- Full Financial Analysis module (spec §6F), Health Score's profitability/ROAS/lead-quality factors (spec §7) — blocked on the above
 
 **Phase 4 (needs: Phase 3 data + enough history to model against)**
 - Forecasting/Prediction module (spec §6G, §11)
