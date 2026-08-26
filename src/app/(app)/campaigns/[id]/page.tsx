@@ -129,7 +129,7 @@ export default async function CampaignDetailPage({
   });
 
   return (
-    <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
       <Link href="/campaigns" className="inline-flex items-center gap-1.5 text-sm text-foreground-muted hover:text-foreground">
         <ArrowLeft size={14} /> Back to campaigns
       </Link>
@@ -251,6 +251,6 @@ export default async function CampaignDetailPage({
           )}
         </CardBody>
       </Card>
-    </main>
+    </div>
   );
 }

@@ -69,7 +69,7 @@ export default async function AlertsPage() {
   flagged.sort((a, b) => (a.anomaly.severity === b.anomaly.severity ? 0 : a.anomaly.severity === "high" ? -1 : 1));
 
   return (
-    <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
         <p className="text-sm text-foreground-muted mt-1">
@@ -117,6 +117,6 @@ export default async function AlertsPage() {
           ))}
         </div>
       )}
-    </main>
+    </div>
   );
 }

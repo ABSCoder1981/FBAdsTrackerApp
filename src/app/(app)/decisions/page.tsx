@@ -22,13 +22,13 @@ export default async function DecisionsPage() {
 
   if (error) {
     return (
-      <main className="p-4 md:p-6 max-w-[1400px] mx-auto">
+      <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
         <h1 className="text-2xl font-semibold tracking-tight mb-4">Decisions</h1>
         <p className="text-sm text-danger-fg">
           The decisions table isn&apos;t set up yet ({error.message}). Run migration
           0006_add_decisions_table.sql.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -39,7 +39,7 @@ export default async function DecisionsPage() {
   const campaignNameById = new Map((campaigns ?? []).map((c) => [c.id, c.name]));
 
   return (
-    <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Decisions</h1>
         <p className="text-sm text-foreground-muted mt-1">
@@ -95,6 +95,6 @@ export default async function DecisionsPage() {
           </table>
         </Card>
       )}
-    </main>
+    </div>
   );
 }

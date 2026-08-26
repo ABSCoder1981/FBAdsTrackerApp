@@ -31,10 +31,10 @@ export default async function CampaignsPage({
 
   if (error) {
     return (
-      <main className="p-8">
+      <div className="p-8">
         <h1 className="text-xl font-semibold mb-4">Campaigns</h1>
         <p className="text-danger-fg">Failed to load campaigns: {error.message}</p>
-      </main>
+      </div>
     );
   }
 
@@ -75,12 +75,12 @@ export default async function CampaignsPage({
   });
 
   return (
-    <main className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
         <p className="text-sm text-foreground-muted mt-1">{rows.length} campaigns</p>
       </div>
       <CampaignsExplorer rows={rows} initialQuery={q ?? ""} />
-    </main>
+    </div>
   );
 }
