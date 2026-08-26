@@ -10,6 +10,8 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { MiniFunnel } from "@/components/campaigns/MiniFunnel";
 import { PlacementTable } from "@/components/campaigns/PlacementTable";
 import { CreativeTable } from "@/components/campaigns/CreativeTable";
+import { DecisionCenter } from "@/components/campaigns/DecisionCenter";
+import type { DecisionRecord } from "@/lib/decisions";
 import type { Ad, Campaign, InsightSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +32,7 @@ export default async function CampaignDetailPage({
 
   if (!campaign) notFound();
 
-  const [{ data: snapshots }, { data: placementSnapshots }, { data: adSnapshots }, { data: ads }] =
+  const [{ data: snapshots }, { data: placementSnapshots }, { data: adSnapshots }, { data: ads }, { data: decisionHistory }] =
     await Promise.all([
       supabase
         .from("insight_snapshots")
@@ -52,6 +54,12 @@ export default async function CampaignDetailPage({
         .eq("level", "ad")
         .returns<Pick<InsightSnapshot, "breakdown_dimension" | "spend" | "impressions" | "clicks" | "results">[]>(),
       supabase.from("ads").select("external_id, name").eq("campaign_id", id).returns<Pick<Ad, "external_id" | "name">[]>(),
+      supabase
+        .from("decisions")
+        .select("*")
+        .eq("campaign_id", id)
+        .order("decided_at", { ascending: false })
+        .returns<DecisionRecord[]>(),
     ]);
 
   const rows = snapshots ?? [];
@@ -150,7 +158,7 @@ export default async function CampaignDetailPage({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader
             title="Decision evidence"
@@ -176,6 +184,18 @@ export default async function CampaignDetailPage({
           <CardHeader title="Funnel" description="Impressions → Clicks → Leads (all-time synced)" />
           <CardBody>
             <MiniFunnel impressions={totalImpressions} clicks={totalClicks} results={totalResults} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="Decision center" description="Approve or override, for the record" />
+          <CardBody>
+            <DecisionCenter
+              campaignId={campaign.id}
+              systemRecommendation={decision}
+              systemReasonCodes={reasons}
+              history={decisionHistory ?? []}
+            />
           </CardBody>
         </Card>
       </div>
