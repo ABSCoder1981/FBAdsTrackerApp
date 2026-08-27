@@ -3,13 +3,16 @@
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import type { TileTone } from "./KpiCard";
 
+// Reads the same tile tokens the icon tile itself uses, so a sparkline
+// re-themes along with everything else instead of freezing to the default
+// theme's hues.
 const SPARKLINE_STROKE: Record<TileTone, string> = {
-  blue: "#2563eb",
-  green: "#16a34a",
-  purple: "#7c3aed",
-  orange: "#ea580c",
-  gray: "#6b7280",
-  red: "#dc2626",
+  blue: "var(--tile-blue-fg)",
+  green: "var(--tile-green-fg)",
+  purple: "var(--tile-purple-fg)",
+  orange: "var(--tile-orange-fg)",
+  gray: "var(--tile-gray-fg)",
+  red: "var(--tile-red-fg)",
 };
 
 export function Sparkline({ data, tone }: { data: number[]; tone: TileTone }) {

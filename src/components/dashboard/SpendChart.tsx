@@ -54,22 +54,24 @@ export function SpendChart({ data }: { data: Point[] }) {
         <AreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
           <defs>
             <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#18181b" stopOpacity={0.15} />
-              <stop offset="95%" stopColor="#18181b" stopOpacity={0} />
+              <stop offset="5%" stopColor="var(--chart-line)" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="var(--chart-line)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e8" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="date"
-            tick={{ fontSize: 11, fill: "#71717a" }}
-            axisLine={{ stroke: "#e5e5e8" }}
+            tick={{ fontSize: 11, fill: "var(--chart-tick)" }}
+            axisLine={{ stroke: "var(--chart-grid)" }}
             tickLine={false}
           />
-          <YAxis tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false} width={48} />
+          <YAxis tick={{ fontSize: 11, fill: "var(--chart-tick)" }} axisLine={false} tickLine={false} width={48} />
           <Tooltip
             contentStyle={{
               borderRadius: 10,
-              border: "1px solid #e5e5e8",
+              border: "1px solid var(--chart-grid)",
+              background: "var(--surface)",
+              color: "var(--foreground)",
               fontSize: 12,
             }}
             formatter={(value) => Number(value).toFixed(2)}
@@ -77,7 +79,7 @@ export function SpendChart({ data }: { data: Point[] }) {
           <Area
             type="monotone"
             dataKey="spend"
-            stroke="#18181b"
+            stroke="var(--chart-line)"
             strokeWidth={2}
             fill="url(#spendFill)"
             name="Spend"
