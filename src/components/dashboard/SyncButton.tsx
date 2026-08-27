@@ -20,9 +20,12 @@ export function SyncButton() {
             setResult(null);
             try {
               const r = await triggerSync();
-              setResult(`Synced ${r.upserted}/${r.fetched}`);
-            } catch {
-              setResult("Sync failed");
+              setResult(
+                r.error ? `Sync failed: ${r.error.slice(0, 120)}` : `Synced ${r.upserted}/${r.fetched}`,
+              );
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              setResult(`Sync failed: ${message.slice(0, 120)}`);
             }
           })
         }

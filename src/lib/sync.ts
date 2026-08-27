@@ -52,6 +52,20 @@ function extractResults(objective: string | null, actions: FbAction[] | undefine
   return linkClicks ? Number(linkClicks.value) : 0;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Our app is on Meta's "development" Marketing API access tier (small call
+// budget, confirmed via the x-business-use-case-usage response header) —
+// with a 974-campaign account, a burst of insight pulls routinely trips
+// error code 4 "Application request limit reached". Meta marks this
+// is_transient:true, so a short backoff-and-retry clears most occurrences
+// without needing the App Review upgrade to Standard Access. Only one
+// retry, kept short — Netlify's free-tier function timeout (~10s) leaves
+// little room to wait around before the whole sync fails anyway.
+const RATE_LIMIT_RETRY_DELAYS_MS = [3000];
+
 async function fetchInsights(
   adAccountId: string,
   token: string,
@@ -68,12 +82,28 @@ async function fetchInsights(
   url.searchParams.set("access_token", token);
   if (options.breakdowns) url.searchParams.set("breakdowns", options.breakdowns);
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Meta API error ${res.status}: ${await res.text()}`);
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) {
+      const { data } = (await res.json()) as { data: FbInsightRow[] };
+      return data ?? [];
+    }
+
+    const bodyText = await res.text();
+    let isTransient = false;
+    try {
+      isTransient = Boolean(JSON.parse(bodyText)?.error?.is_transient);
+    } catch {
+      // Non-JSON error body — treat as non-transient below.
+    }
+
+    if (isTransient && attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
+      await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
+      continue;
+    }
+
+    throw new Error(`Meta API error ${res.status}: ${bodyText}`);
   }
-  const { data } = (await res.json()) as { data: FbInsightRow[] };
-  return data ?? [];
 }
 
 export async function runSync(): Promise<{ fetched: number; upserted: number; skipped: number }> {
@@ -96,6 +126,11 @@ export async function runSync(): Promise<{ fetched: number; upserted: number; sk
   //   only 4/20 campaigns have >1 ad, thin but real value for those; harmless
   //   single-row table for the rest. Audience (§6C) was tested too and
   //   dropped — every campaign has exactly 1 ad set, nothing to compare.
+  // Kept concurrent (not sequential) — sequential pushed total wall time
+  // past Netlify's free-tier ~10s function timeout, trading a rate-limit
+  // failure for a timeout failure. The retry-with-backoff in fetchInsights
+  // is what actually clears the transient "Application request limit
+  // reached" errors from the dev-tier rate budget.
   const [campaignRows, placementRows, adRows] = await Promise.all([
     fetchInsights(adAccountId, token),
     fetchInsights(adAccountId, token, { breakdowns: "publisher_platform,platform_position" }),
