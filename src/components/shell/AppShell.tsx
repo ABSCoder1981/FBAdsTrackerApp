@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { NAV_ITEMS } from "./navItems";
 import { HeaderSearch } from "./HeaderSearch";
-import { ThemeToggle } from "./ThemeToggle";
 import { signOut } from "@/app/login/actions";
 
 export function AppShell({
@@ -37,14 +36,14 @@ export function AppShell({
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden md:flex flex-col shrink-0 border-r border-chrome-border bg-chrome-bg transition-[width] duration-150 ${
+        className={`hidden md:flex flex-col shrink-0 border-r border-border bg-surface transition-[width] duration-150 ${
           collapsed ? "w-16" : "w-60"
         }`}
       >
         <SidebarContent collapsed={collapsed} activeHref={activeHref} />
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="flex items-center gap-2 px-4 py-3 text-xs text-chrome-fg hover:text-chrome-fg-hover border-t border-chrome-border"
+          className="flex items-center gap-2 px-4 py-3 text-xs text-foreground-muted hover:text-foreground border-t border-border"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
@@ -59,10 +58,10 @@ export function AppShell({
             className="absolute inset-0 bg-black/30"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute left-0 top-0 h-full w-64 bg-chrome-bg flex flex-col">
-            <div className="flex items-center justify-between px-4 h-14 border-b border-chrome-border">
-              <span className="font-semibold text-sm text-chrome-fg-hover">FB Ads Tracker</span>
-              <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="text-chrome-fg">
+          <aside className="absolute left-0 top-0 h-full w-64 bg-surface flex flex-col">
+            <div className="flex items-center justify-between px-4 h-14 border-b border-border">
+              <span className="font-semibold text-sm">FB Ads Tracker</span>
+              <button onClick={() => setMobileOpen(false)} aria-label="Close menu">
                 <X size={18} />
               </button>
             </div>
@@ -73,16 +72,16 @@ export function AppShell({
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-14 shrink-0 border-b border-chrome-border bg-chrome-bg flex items-center justify-between px-4 md:px-6 gap-4">
+        <header className="h-14 shrink-0 border-b border-border bg-surface flex items-center justify-between px-4 md:px-6 gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
-              className="md:hidden -ml-1 p-1.5 text-chrome-fg-hover"
+              className="md:hidden -ml-1 p-1.5"
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
             >
               <Menu size={20} />
             </button>
-            <span className="font-semibold text-sm truncate text-chrome-fg-hover">
+            <span className="font-semibold text-sm truncate">
               {NAV_ITEMS.find((i) => i.href === activeHref)?.label ?? "FB Ads Tracker"}
             </span>
           </div>
@@ -90,22 +89,21 @@ export function AppShell({
           <HeaderSearch />
 
           <div className="flex items-center gap-1">
-            <ThemeToggle />
             <button
-              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-chrome-fg hover:text-chrome-fg-hover hover:bg-chrome-bg-active"
+              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
               aria-label="Notifications"
             >
               <Bell size={17} strokeWidth={1.75} />
             </button>
             <button
-              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-chrome-fg hover:text-chrome-fg-hover hover:bg-chrome-bg-active"
+              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
               aria-label="Help"
             >
               <HelpCircle size={17} strokeWidth={1.75} />
             </button>
             <Link
               href="/settings"
-              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-chrome-fg hover:text-chrome-fg-hover hover:bg-chrome-bg-active"
+              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
               aria-label="Settings"
             >
               <Settings size={17} strokeWidth={1.75} />
@@ -119,7 +117,7 @@ export function AppShell({
             <form action={signOut}>
               <button
                 type="submit"
-                className="h-9 w-9 flex items-center justify-center rounded-[var(--radius-sm)] text-chrome-fg hover:text-chrome-fg-hover hover:bg-chrome-bg-active"
+                className="h-9 w-9 flex items-center justify-center rounded-[var(--radius-sm)] text-foreground-muted hover:bg-surface-muted"
                 aria-label="Sign out"
                 title="Sign out"
               >
@@ -146,11 +144,11 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="h-14 flex items-center gap-2.5 px-4 border-b border-chrome-border shrink-0">
+      <div className="h-14 flex items-center gap-2.5 px-4 border-b border-border shrink-0">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-primary text-primary-foreground font-bold text-sm">
           F
         </span>
-        {!collapsed && <span className="font-semibold text-sm truncate text-chrome-fg-hover">FB Ads Tracker</span>}
+        {!collapsed && <span className="font-semibold text-sm truncate">FB Ads Tracker</span>}
       </div>
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {NAV_ITEMS.map((item) => {
@@ -164,8 +162,8 @@ function SidebarContent({
               title={collapsed ? item.label : undefined}
               className={`flex items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-sm transition-colors ${
                 isActive
-                  ? "bg-chrome-bg-active text-chrome-fg-active font-medium"
-                  : "text-chrome-fg hover:bg-chrome-bg-active hover:text-chrome-fg-hover"
+                  ? "bg-tile-blue-bg text-primary font-medium"
+                  : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"
               }`}
             >
               <Icon size={17} strokeWidth={2} className="shrink-0" />

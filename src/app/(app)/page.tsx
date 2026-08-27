@@ -233,16 +233,11 @@ export default async function OverviewPage({
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto">
-      {/* Hero — bg/text use tokens that are flat/neutral in the default
-          theme and a bold gradient banner in the Finance theme (see
-          --hero-gradient in globals.css); the section itself never changes. */}
-      <div
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-[var(--radius-lg)] p-5"
-        style={{ background: "var(--hero-gradient)" }}
-      >
+      {/* Hero */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-hero-fg">{greeting}, Abbas 👋</h1>
-          <p className="text-sm text-hero-fg-muted mt-1">
+          <h1 className="text-2xl font-semibold tracking-tight">{greeting}, Abbas 👋</h1>
+          <p className="text-sm text-foreground-muted mt-1">
             Here&apos;s what&apos;s happening with your ad campaigns.
           </p>
         </div>
@@ -454,7 +449,7 @@ function relativeSyncLabel(date: Date, now: Date): string {
 
 function RelativeSyncTime({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-hero-fg-muted">
+    <span className="inline-flex items-center gap-1 text-xs text-foreground-muted">
       <span className="h-1.5 w-1.5 rounded-full bg-success-fg" />
       Synced {label}
     </span>
